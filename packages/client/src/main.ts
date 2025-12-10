@@ -73,9 +73,10 @@ const lasers = new LaserSystem();
 const camera = new Camera(window.innerWidth, window.innerHeight);
 
 // Track local cursor position (bright cyan for visibility)
-let localCursor = { x: 0, y: 0, rotation: 0, health: 50, color: '#00FFFF', label: 'You' };
+let localCursor = { x: 0, y: 0, rotation: 0, health: 100, color: '#00FFFF', label: 'You' };
 let targetPosition = { x: 0, y: 0 }; // Mouse target position
 let respawnTimeEnd = 0; // Timestamp when respawn happens
+let isDead = false; // Track death state
 const followSpeed = 0.04; // Lower = more lag, higher = more responsive (increased delay)
 const rotationSpeed = 0.1; // Smooth rotation interpolation
 
@@ -206,6 +207,7 @@ socket.onPlayerRespawn((data) => {
   console.log('💀 Received respawn event:', data, 'My ID:', socket.getSocketId());
   if (data.userId === socket.getSocketId()) {
     respawnTimeEnd = data.respawnTime;
+    isDead = true;
     console.log(`🕒 Respawning in ${Math.ceil((data.respawnTime - Date.now()) / 1000)}s`);
   }
 });
@@ -253,6 +255,7 @@ socket.onHealthUpdate((data) => {
     console.log(`❤️ Health updated: ${localCursor.health}`);
     if (localCursor.health > 0) {
       respawnTimeEnd = 0;
+      isDead = false;
     }
   } else {
     cursors.setHealth(data.userId, data.health);
@@ -802,8 +805,8 @@ canvas.startRenderLoop(() => {
     ctx.textAlign = 'right';
     ctx.fillText(`${currentWeapon.icon} ${currentWeapon.name}${ammoText}`, window.innerWidth - 30, window.innerHeight - 30);
     ctx.restore();
-  } else {
-    // Display respawn timer
+  } else if (isDead && respawnTimeEnd > 0) {
+    // Display respawn timer only if we received the respawn event
     const remaining = Math.max(0, Math.ceil((respawnTimeEnd - Date.now()) / 1000));
     ctx.save();
     ctx.fillStyle = '#FF0000';
@@ -812,6 +815,16 @@ canvas.startRenderLoop(() => {
     ctx.shadowBlur = 20;
     ctx.shadowColor = '#FF0000';
     ctx.fillText(`RESPAWN IN ${remaining}`, window.innerWidth / 2, window.innerHeight / 2);
+    ctx.restore();
+  } else if (localCursor.health <= 0) {
+    // Dead but waiting for server respawn event
+    ctx.save();
+    ctx.fillStyle = '#FF0000';
+    ctx.font = 'bold 40px Arial';
+    ctx.textAlign = 'center';
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = '#FF0000';
+    ctx.fillText('WASTED', window.innerWidth / 2, window.innerHeight / 2);
     ctx.restore();
   }
   ctx.restore();
