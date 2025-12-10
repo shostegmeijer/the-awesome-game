@@ -14,7 +14,7 @@ interface Mine extends MineData {
 export class MineSystem {
     private mines: Mine[] = [];
     private nextId = 0;
-    private spawnInterval = 10000; // Spawn every 10 seconds
+    private spawnInterval = 5000; // Spawn every 5 seconds
     private lastSpawnTime = 0;
     private maxMines = 10;
     private mineRadius = 20;
@@ -88,6 +88,55 @@ export class MineSystem {
     }
 
     /**
+     * Check collisions with lasers
+     */
+    checkLaserCollision(x1: number, y1: number, angle: number, length: number): string[] {
+        const hitMines: string[] = [];
+        const x2 = x1 + Math.cos(angle) * length;
+        const y2 = y1 + Math.sin(angle) * length;
+
+        for (let i = 0; i < this.mines.length; i++) {
+            const mine = this.mines[i];
+
+            // Point to line distance
+            const A = mine.x - x1;
+            const B = mine.y - y1;
+            const C = x2 - x1;
+            const D = y2 - y1;
+
+            const dot = A * C + B * D;
+            const lenSq = C * C + D * D;
+            let param = -1;
+
+            if (lenSq !== 0) {
+                param = dot / lenSq;
+            }
+
+            let xx, yy;
+
+            if (param < 0) {
+                xx = x1;
+                yy = y1;
+            } else if (param > 1) {
+                xx = x2;
+                yy = y2;
+            } else {
+                xx = x1 + param * C;
+                yy = y1 + param * D;
+            }
+
+            const dx = mine.x - xx;
+            const dy = mine.y - yy;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance < mine.radius + 10) { // +10 for laser width
+                hitMines.push(mine.id);
+            }
+        }
+        return hitMines;
+    }
+
+    /**
      * Check collisions with players
      */
     checkPlayerCollision(playerX: number, playerY: number, playerRadius: number): string | null {
@@ -144,13 +193,13 @@ export class MineSystem {
         });
 
         // Check for chain reactions
-        this.checkChainReactions(mine.x, mine.y, mine.damageRadius);
+        this.checkChainReactions(mine.x, mine.y, mine.damageRadius, triggeredByUserId);
     }
 
     /**
      * Check if explosion hits other mines
      */
-    private checkChainReactions(explosionX: number, explosionY: number, explosionRadius: number): void {
+    private checkChainReactions(explosionX: number, explosionY: number, explosionRadius: number, triggeredByUserId?: string): void {
         // Use a timeout to create a cascading effect
         setTimeout(() => {
             for (let i = this.mines.length - 1; i >= 0; i--) {
@@ -159,8 +208,9 @@ export class MineSystem {
                 const dy = mine.y - explosionY;
                 const distance = Math.sqrt(dx * dx + dy * dy);
 
-                if (distance < explosionRadius) {
-                    this.explodeMine(mine.id);
+                // Check if explosion reaches the mine (accounting for mine radius)
+                if (distance < explosionRadius + mine.radius) {
+                    this.explodeMine(mine.id, triggeredByUserId);
                 }
             }
         }, 100);

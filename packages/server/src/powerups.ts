@@ -13,7 +13,7 @@ interface PowerUp extends PowerUpData {
 export class PowerUpSystem {
     private powerups: PowerUp[] = [];
     private nextId = 0;
-    private spawnInterval = 8000; // Spawn every 8 seconds
+    private spawnInterval = 3000; // Spawn every 8 seconds
     private lastSpawnTime = 0;
     private maxPowerUps = 5;
     private io: Server<ClientToServerEvents, ServerToClientEvents>;

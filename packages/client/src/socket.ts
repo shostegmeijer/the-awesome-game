@@ -63,6 +63,13 @@ export class SocketManager {
   }
 
   /**
+   * Emit laser shoot to server
+   */
+  emitLaserShoot(x: number, y: number, angle: number): void {
+    this.socket.emit('laser:shoot', { x, y, angle });
+  }
+
+  /**
    * Get the socket ID
    */
   getSocketId(): string | undefined {

@@ -107,6 +107,7 @@ controls.onAction('shoot', () => {
       socket.getSocketId() || 'local',
       weapon.color
     );
+    socket.emitLaserShoot(localCursor.x, localCursor.y, localCursor.rotation);
     console.log(`💥 ${weapon.icon} LASER!`);
     weaponManager.resetToMachineGun();
     return;
@@ -230,6 +231,31 @@ socket.on('powerup:collect', (data) => {
   }
 
   console.log(`✨ Collected: ${weapon.name} by ${data.userId}`);
+});
+
+// Handle remote lasers
+socket.on('laser:spawn', (data) => {
+  // Don't duplicate local laser
+  if (data.userId === socket.getSocketId()) return;
+
+  // Find the remote cursor to attach the laser to (for rotation updates)
+  const remoteCursor = cursors.getCursors().get(data.userId);
+
+  lasers.fire(
+    () => {
+      // If we have the cursor, follow it. Otherwise use static spawn pos
+      if (remoteCursor) {
+        return { x: remoteCursor.x, y: remoteCursor.y, rotation: remoteCursor.rotation };
+      }
+      return { x: data.x, y: data.y, rotation: data.angle };
+    },
+    20, // Short lifetime for remote lasers as they are event-based? 
+    // Actually, main.ts uses weapon.bulletLifetime which is usually ~10-20 frames for laser?
+    // Let's assume a standard duration or we should have passed it.
+    // For now, 20 frames (approx 300ms) is decent for a burst laser.
+    data.userId,
+    data.color
+  );
 });
 
 // Get grid for applying forces

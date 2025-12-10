@@ -114,6 +114,22 @@ export interface PowerUpsSyncPayload {
   powerups: PowerUpData[];
 }
 
+// Payload for laser shoot
+export interface LaserShootPayload {
+  x: number;
+  y: number;
+  angle: number;
+}
+
+// Payload for laser spawn (broadcast)
+export interface LaserSpawnPayload {
+  userId: string;
+  x: number;
+  y: number;
+  angle: number;
+  color: string;
+}
+
 // Socket.io event map for type safety
 export interface ServerToClientEvents {
   'user:joined': (data: UserJoinedPayload) => void;
@@ -133,13 +149,12 @@ export interface ServerToClientEvents {
   'powerup:sync': (data: PowerUpsSyncPayload) => void;
 
   'weapon:explode': (data: WeaponExplodePayload) => void;
+  'laser:spawn': (data: LaserSpawnPayload) => void;
 }
 
 export interface ClientToServerEvents {
   'cursor:move': (data: CursorMovePayload) => void;
   'bullet:shoot': (data: BulletShootPayload) => void;
+  'laser:shoot': (data: LaserShootPayload) => void;
   'health:damage': (data: HealthUpdatePayload) => void;
-
-  // New events - mostly for verification/client-initiated actions if needed
-  // But primarily server drives these now
 }

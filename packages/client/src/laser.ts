@@ -37,10 +37,10 @@ export class LaserSystem {
 
     // Outer glow layer
     ctx.globalAlpha = 0.3;
-    ctx.shadowBlur = 40;
+    ctx.shadowBlur = 20;
     ctx.shadowColor = color;
     ctx.strokeStyle = color;
-    ctx.lineWidth = 20;
+    ctx.lineWidth = 12;
 
     ctx.beginPath();
     ctx.moveTo(0, centerY);
@@ -50,7 +50,7 @@ export class LaserSystem {
     // Middle layer
     ctx.globalAlpha = 0.6;
     ctx.shadowBlur = 25;
-    ctx.lineWidth = 12;
+    ctx.lineWidth = 3;
 
     ctx.beginPath();
     ctx.moveTo(0, centerY);
@@ -62,7 +62,7 @@ export class LaserSystem {
     ctx.shadowBlur = 15;
     ctx.shadowColor = '#FFFFFF';
     ctx.strokeStyle = '#FFFFFF';
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 2;
 
     ctx.beginPath();
     ctx.moveTo(0, centerY);

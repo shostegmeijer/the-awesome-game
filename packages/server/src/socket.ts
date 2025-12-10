@@ -21,7 +21,7 @@ export function initializeSocketHandlers(io: TypedServer): void {
   const powerUpSystem = new PowerUpSystem(io);
   const bulletSystem = new BulletSystem();
 
-  // Start server-side game loop (20 TPS)
+  // Start server-side game loop (60 TPS)
   setInterval(() => {
     mineSystem.update();
     powerUpSystem.update();
@@ -53,7 +53,7 @@ export function initializeSocketHandlers(io: TypedServer): void {
       }
     });
 
-  }, 50); // 50ms = 20 updates per second
+  }, 16); // 16ms = ~60 updates per second
 
   io.on('connection', (socket: TypedSocket) => {
     console.log(`🔌 User connected: ${socket.id}`);
@@ -129,6 +129,27 @@ export function initializeSocketHandlers(io: TypedServer): void {
         vx,
         vy,
         color: user.color
+      });
+    });
+
+    // Handle laser shooting
+    socket.on('laser:shoot', ({ x, y, angle }) => {
+      const user = getAllUsers().get(socket.id);
+      if (!user) return;
+
+      // Broadcast laser to other clients
+      io.emit('laser:spawn', {
+        userId: socket.id,
+        x,
+        y,
+        angle,
+        color: user.color
+      });
+
+      // Check collisions with mines
+      const hitMineIds = mineSystem.checkLaserCollision(x, y, angle, 2000); // 2000 is beam range
+      hitMineIds.forEach(mineId => {
+        mineSystem.explodeMine(mineId, socket.id);
       });
     });
 
