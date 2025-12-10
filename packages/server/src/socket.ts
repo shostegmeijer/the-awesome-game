@@ -1,12 +1,20 @@
-import { ClientToServerEvents, CursorData, ServerToClientEvents } from '@awesome-game/shared';
+
+import {
+  ClientToServerEvents,
+  CursorData,
+  MAP_HEIGHT,
+  MAP_WIDTH,
+  ServerToClientEvents
+} from '@awesome-game/shared';
 import { Server, Socket } from 'socket.io';
 import { BotSystem } from './bots.js';
 import { BulletSystem } from './bullets.js';
+import { calculatePlacementScore, getPlayerName, submitScoreToHub } from './hub-api.js';
 import { ADMIN_PASSWORD } from './index.js';
 import { LaserSystem } from './lasers.js';
 import { MineSystem } from './mines.js';
 import { PowerUpSystem } from './powerups.js';
-import { addBot, addUser, getAllBots, getAllUsers, getSettings, removeBot, removeUser, setBotHealth, updateCursor, updateHealth, updateSettings } from './state.js';
+import { addBot, addDeath, addKill, addUser, getAllBots, getAllUsers, getSettings, getUserRank, markScoreSubmitted, removeBot, removeUser, setBotHealth, updateCursor, updateHealth, updateSettings } from './state.js';
 
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents>;
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
@@ -15,9 +23,32 @@ type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
  * Initialize Socket.io event handlers
  */
 export function initializeSocketHandlers(io: TypedServer): void {
-  // Centralized death handler (from merged development)
-  const handleDeath = (userId: string) => {
-    const RESPAWN_DELAY = 10000;
+  // Centralized death handler
+  const handleDeath = (userId: string, attackerId?: string) => {
+    const user = getAllUsers().get(userId);
+    const attacker = attackerId ? getAllUsers().get(attackerId) : null;
+
+    if (user && attacker) {
+      // Track stats
+      addDeath(user.id);
+      if (user.id !== attacker.id) {
+        addKill(attacker.id);
+      }
+
+      // Broadcast kill event
+      io.emit('player:killed', {
+        victimId: user.id,
+        victimName: user.label,
+        attackerId: attacker.id,
+        attackerName: attacker.label
+      });
+      console.log(`[DEATH] ${user.label} killed by ${attacker.label} `);
+    } else if (user) {
+      addDeath(user.id);
+      console.log(`[DEATH] ${user.label} died`);
+    }
+
+    const RESPAWN_DELAY = 6000;
     const respawnTime = Date.now() + RESPAWN_DELAY;
 
     // Notify all users about respawn (so everyone knows)
@@ -33,8 +64,8 @@ export function initializeSocketHandlers(io: TypedServer): void {
       if (user) {
         // Reset user state
         user.health = 100;
-        user.x = Math.random() * 2000;
-        user.y = Math.random() * 2000;
+        user.x = (Math.random() - 0.5) * MAP_WIDTH;
+        user.y = (Math.random() - 0.5) * MAP_HEIGHT;
         user.weaponType = 'machineGun';
 
         // Notify all clients about respawn (health update + position update)
@@ -75,19 +106,20 @@ export function initializeSocketHandlers(io: TypedServer): void {
     // Check collisions
     const users = getAllUsers();
 
-    // Check powerup collection
+    // Check powerup collection and mine collision only for alive players
     users.forEach(user => {
-      const collectedPowerUp = powerUpSystem.checkCollection(user.x, user.y, user.radius);
-      if (collectedPowerUp) {
-        powerUpSystem.collectPowerUp(collectedPowerUp.id, user.id);
-      }
+      if (user.health > 0) {
+        const collectedPowerUp = powerUpSystem.checkCollection(user.x, user.y, user.radius);
+        if (collectedPowerUp) {
+          powerUpSystem.collectPowerUp(collectedPowerUp.id, user.id);
+        }
 
-      // Check mine collision with player
-      const hitMineId = mineSystem.checkPlayerCollision(user.x, user.y, user.radius);
-      if (hitMineId) {
-        mineSystem.explodeMine(hitMineId, user.id);
+        // Check mine collision with player
+        const hitMineId = mineSystem.checkPlayerCollision(user.x, user.y, user.radius);
+        if (hitMineId) {
+          mineSystem.explodeMine(hitMineId, user.id);
+        }
       }
-
       // Player respawn timing handled by handleDeath
     });
 
@@ -105,6 +137,7 @@ export function initializeSocketHandlers(io: TypedServer): void {
       const USER_RADIUS = 25;
       const usersMap = getAllUsers();
       for (const user of usersMap.values()) {
+        if (user.health <= 0) continue; // ignore dead players for collisions
         const dx = bullet.x - user.x;
         const dy = bullet.y - user.y;
         const dist2 = dx * dx + dy * dy;
@@ -139,14 +172,29 @@ export function initializeSocketHandlers(io: TypedServer): void {
     });
   }, 16); // 16ms = ~60 updates per second
 
-  io.on('connection', (socket: TypedSocket) => {
-    console.log(`🔌 User connected: ${socket.id}`);
+  io.on('connection', async (socket: TypedSocket) => {
+    // Extract playerKey from socket handshake query
+    const playerKey = socket.handshake.query.playerKey as string | undefined;
+    console.log(`🔌 User connected: ${socket.id}${playerKey ? ` [PlayerKey: ${playerKey}]` : ''}`);
 
-    // Add user to state
-    addUser(socket.id);
-    // Apply starting health from settings
-    const s = getSettings();
-    updateHealth(socket.id, s.playerStartingHealth);
+    // Add user to state with playerKey
+    const user = addUser(socket.id, playerKey);
+
+    // Fetch real player name from hub if playerKey is provided
+    if (playerKey) {
+      const playerName = await getPlayerName(playerKey);
+      if (playerName) {
+        user.label = playerName;
+        console.log(`✅ Player name fetched: ${playerName} (${playerKey})`);
+      }
+    }
+
+    // Send player their own info (with updated name)
+    socket.emit('player:info', {
+      userId: user.id,
+      label: user.label,
+      color: user.color
+    });
 
     // Notify other clients about the new user (skipped; cursors:sync will reflect state)
 
@@ -188,13 +236,17 @@ export function initializeSocketHandlers(io: TypedServer): void {
     socket.on('cursor:move', ({ x, y, rotation }) => {
       // Validate coordinates
       if (typeof x !== 'number' || typeof y !== 'number') return;
-      if (x < 0 || y < 0 || x > 10000 || y > 10000) return;
 
-      // Update state
-      updateCursor(socket.id, x, y, rotation || 0);
+      // Clamp to map bounds (centered)
+      const halfW = MAP_WIDTH / 2;
+      const halfH = MAP_HEIGHT / 2;
+      const clampedX = Math.max(-halfW, Math.min(x, halfW));
+      const clampedY = Math.max(-halfH, Math.min(y, halfH));
 
-      // Broadcast to other clients (volatile = UDP-like, prioritize speed over reliability)
-      socket.volatile.broadcast.emit('cursor:update', {
+      updateCursor(socket.id, clampedX, clampedY, rotation);
+
+      // Broadcast new position to all other clients (optimized: only send x,y,rotation)
+      socket.broadcast.emit('cursor:update', {
         userId: socket.id,
         x,
         y,
@@ -213,7 +265,7 @@ export function initializeSocketHandlers(io: TypedServer): void {
       if (!user || user.health <= 0) return;
 
       // Generate unique bullet ID
-      const bulletId = `${socket.id}-${Date.now()}-${Math.random()}`;
+      const bulletId = `${socket.id} -${Date.now()} -${Math.random()} `;
 
       // Add to server tracking
       bulletSystem.addBullet(bulletId, socket.id, x, y, angle);
@@ -246,7 +298,7 @@ export function initializeSocketHandlers(io: TypedServer): void {
     });
 
     // Handle health damage
-    socket.on('health:damage', ({ userId, health }) => {
+    socket.on('health:damage', ({ userId, health, attackerId }) => {
       const newHealth = updateHealth(userId, health);
       if (newHealth !== null) {
         // Broadcast health update to all clients
@@ -257,14 +309,31 @@ export function initializeSocketHandlers(io: TypedServer): void {
 
         // Check for death and schedule respawn
         if (newHealth <= 0) {
-          handleDeath(userId);
+          handleDeath(userId, attackerId);
         }
       }
     });
 
     // Handle disconnect
-    socket.on('disconnect', () => {
-      console.log(`🔌 User disconnected: ${socket.id}`);
+    socket.on('disconnect', async () => {
+      const user = getAllUsers().get(socket.id);
+      console.log(`🔌 User disconnected: ${socket.id} `);
+
+      // Submit score to hub if player has a playerKey and hasn't submitted yet
+      if (user && user.playerKey && !user.scoreSubmitted) {
+        const rank = getUserRank(socket.id);
+        const totalPlayers = getAllUsers().size;
+        const hubScore = calculatePlacementScore(rank, totalPlayers);
+
+        console.log(`📊 Player stats - Rank: ${rank}/${totalPlayers}, Kills: ${user.kills}, Deaths: ${user.deaths}, Hub Score: ${hubScore}`);
+
+        const success = await submitScoreToHub(user.playerKey, user.label, hubScore);
+        if (success) {
+          markScoreSubmitted(socket.id);
+          console.log(`✅ Score submitted for ${user.label} (${user.playerKey}): ${hubScore}/100`);
+        }
+      }
+
       removeUser(socket.id);
       io.emit('user:left', { userId: socket.id });
     });

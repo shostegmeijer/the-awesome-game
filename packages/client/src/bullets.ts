@@ -2,6 +2,8 @@
  * Bullet/projectile system for shooting mechanic
  */
 
+import { MAP_WIDTH, MAP_HEIGHT } from '@awesome-game/shared';
+
 interface Bullet {
   x: number;
   y: number;
@@ -118,19 +120,32 @@ export class BulletSystem {
 
       // Increment lifetime
       bullet.lifetime++;
+
+      // Bounce off walls
+      const halfW = MAP_WIDTH / 2;
+      const halfH = MAP_HEIGHT / 2;
+
+      // Horizontal bounce
+      if (bullet.x < -halfW) {
+        bullet.x = -halfW;
+        bullet.vx = -bullet.vx;
+      } else if (bullet.x > halfW) {
+        bullet.x = halfW;
+        bullet.vx = -bullet.vx;
+      }
+
+      // Vertical bounce
+      if (bullet.y < -halfH) {
+        bullet.y = -halfH;
+        bullet.vy = -bullet.vy;
+      } else if (bullet.y > halfH) {
+        bullet.y = halfH;
+        bullet.vy = -bullet.vy;
+      }
     });
 
     // Remove bullets that are too old (120 frames = 2 seconds at 60fps)
-    // or off-screen
-    this.bullets = this.bullets.filter(bullet => {
-      if (bullet.lifetime > 120) return false;
-
-      // Remove if way off screen
-      if (bullet.x < -100 || bullet.x > window.innerWidth + 100) return false;
-      if (bullet.y < -100 || bullet.y > window.innerHeight + 100) return false;
-
-      return true;
-    });
+    this.bullets = this.bullets.filter(bullet => bullet.lifetime <= 120);
   }
 
   /**
@@ -169,10 +184,11 @@ export class BulletSystem {
         ctx.restore();
       } else {
         // Use texture stamping for regular bullets
+        ctx.save();
         ctx.translate(bullet.x, bullet.y);
         ctx.rotate(angle);
         ctx.drawImage(this.bulletTexture, -9, -5);
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.restore();
       }
     });
 
@@ -196,8 +212,8 @@ export class BulletSystem {
   /**
    * Check collision with a target (returns true if hit)
    */
-  checkCollision(targetX: number, targetY: number, targetRadius: number, targetId: string): boolean {
-    let hit = false;
+  checkCollision(targetX: number, targetY: number, targetRadius: number, targetId: string): Bullet | null {
+    let hitBullet: Bullet | null = null;
 
     this.bullets = this.bullets.filter(bullet => {
       // Don't check collision with own bullets
@@ -212,14 +228,14 @@ export class BulletSystem {
 
       // Check if collision occurred
       if (distance < targetRadius) {
-        hit = true;
+        hitBullet = bullet;
         return false; // Remove bullet
       }
 
       return true; // Keep bullet
     });
 
-    return hit;
+    return hitBullet;
   }
 
   /**

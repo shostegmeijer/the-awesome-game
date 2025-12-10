@@ -126,7 +126,7 @@ export class LaserSystem {
   /**
    * Check if a target is hit by any beam
    */
-  checkCollision(targetX: number, targetY: number, targetRadius: number, targetId: string): boolean {
+  checkCollision(targetX: number, targetY: number, targetRadius: number, targetId: string): string | null {
     for (const beam of this.beams) {
       // Don't hit yourself
       if (beam.ownerId === targetId) continue;
@@ -145,10 +145,10 @@ export class LaserSystem {
       );
 
       if (distance < targetRadius + 5) {
-        return true;
+        return beam.ownerId;
       }
     }
-    return false;
+    return null;
   }
 
   /**

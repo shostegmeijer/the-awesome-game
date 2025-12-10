@@ -172,6 +172,8 @@ export class ParticleSystem {
     ctx.save();
 
     this.particles.forEach(particle => {
+      ctx.save(); // Save current transform (camera)
+
       const alpha = particle.life;
       const scale = particle.life * 0.7;
 
@@ -187,8 +189,7 @@ export class ParticleSystem {
       // Draw pre-rendered texture (adjusted for smaller size)
       ctx.drawImage(this.particleTexture, -10, -10);
 
-      // Reset transforms
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.restore(); // Restore transform (camera)
     });
 
     ctx.restore();

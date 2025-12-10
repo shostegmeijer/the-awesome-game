@@ -3,7 +3,10 @@ import {
     ClientToServerEvents,
     ServerToClientEvents,
     PowerUpData,
-    WeaponType
+    PowerUpCollectPayload,
+    WeaponType,
+    MAP_WIDTH,
+    MAP_HEIGHT
 } from '@awesome-game/shared';
 
 interface PowerUp extends PowerUpData {
@@ -40,11 +43,9 @@ export class PowerUpSystem {
      */
     spawn(): void {
         const padding = 100;
-        const mapWidth = 4000;
-        const mapHeight = 1000;
         // Using window fallback for now, ideally should use map config
-        const x = padding + Math.random() * (mapWidth - padding * 2);
-        const y = padding + Math.random() * (mapHeight - padding * 2);
+        const x = (Math.random() - 0.5) * MAP_WIDTH;
+        const y = (Math.random() - 0.5) * MAP_HEIGHT;
 
         // Random weapon type (exclude machine gun)
         const weaponTypes = [
@@ -56,7 +57,7 @@ export class PowerUpSystem {
         const weaponType = weaponTypes[Math.floor(Math.random() * weaponTypes.length)];
 
         const powerup: PowerUp = {
-            id: `powerup-${this.nextId++}-${Date.now()}`,
+            id: `powerup - ${ this.nextId++ } -${ Date.now() } `,
             x,
             y,
             weaponType,
@@ -68,7 +69,7 @@ export class PowerUpSystem {
         // Broadcast new powerup
         this.io.emit('powerup:spawn', powerup);
 
-        console.log(`💎 Powerup spawned: ${weaponType}`);
+        console.log(`💎 Powerup spawned: ${ weaponType } `);
     }
 
     /**

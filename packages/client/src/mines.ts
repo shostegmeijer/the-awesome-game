@@ -11,9 +11,53 @@ interface ClientMine extends MineData {
 
 export class MineSystem {
   private mines: ClientMine[] = [];
+  private mineCanvas: HTMLCanvasElement;
 
   // Visual properties
   private damageRadius = 120; // For visualization only
+
+  constructor() {
+    this.mineCanvas = document.createElement('canvas');
+    this.mineCanvas.width = 100;
+    this.mineCanvas.height = 100;
+    this.prerenderMine();
+  }
+
+  private prerenderMine(): void {
+    const ctx = this.mineCanvas.getContext('2d')!;
+    const centerX = 50;
+    const centerY = 50;
+    const radius = 20;
+
+    // Outer glow layer
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = '#FF1493';
+    ctx.strokeStyle = '#FF1493';
+    ctx.lineWidth = 4;
+
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Middle glow layer
+    ctx.shadowBlur = 15;
+    ctx.strokeStyle = '#FF69B4';
+    ctx.lineWidth = 3;
+
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Inner bright circle
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = '#FFFFFF';
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 2;
+
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
 
   /**
    * Update mine animations
@@ -83,37 +127,11 @@ export class MineSystem {
       const pulse = 1 + Math.sin(mine.pulsePhase) * 0.2;
       const blink = 0.7 + Math.sin(mine.blinkPhase) * 0.3; // 0.4 to 1.0
 
-      // Outer glow layer
-      ctx.globalAlpha = 0.4 * blink;
-      ctx.shadowBlur = 40;
-      ctx.shadowColor = '#FF1493';
-      ctx.strokeStyle = '#FF1493';
-      ctx.lineWidth = 8;
-
-      ctx.beginPath();
-      ctx.arc(mine.x, mine.y, mine.radius * pulse, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Middle glow layer
-      ctx.globalAlpha = 0.6 * blink;
-      ctx.shadowBlur = 30;
-      ctx.strokeStyle = '#FF69B4';
-      ctx.lineWidth = 5;
-
-      ctx.beginPath();
-      ctx.arc(mine.x, mine.y, mine.radius * pulse, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Inner bright circle
-      ctx.globalAlpha = 1 * blink;
-      ctx.shadowBlur = 20;
-      ctx.shadowColor = '#FFFFFF';
-      ctx.strokeStyle = '#FFFFFF';
-      ctx.lineWidth = 2;
-
-      ctx.beginPath();
-      ctx.arc(mine.x, mine.y, mine.radius * pulse, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.globalAlpha = blink;
+      ctx.translate(mine.x, mine.y);
+      ctx.scale(pulse, pulse);
+      // Draw centered
+      ctx.drawImage(this.mineCanvas, -50, -50);
 
       ctx.restore();
     });

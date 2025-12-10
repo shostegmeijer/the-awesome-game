@@ -2,7 +2,9 @@ import { Server } from 'socket.io';
 import {
     ClientToServerEvents,
     ServerToClientEvents,
-    MineData
+    MineData,
+    MAP_WIDTH,
+    MAP_HEIGHT
 } from '@awesome-game/shared';
 import { getAllUsers, updateHealth } from './state.js';
 
@@ -21,9 +23,9 @@ export class MineSystem {
     private damageRadius = 240;
     private mineDamage = 40;
     private io: Server<ClientToServerEvents, ServerToClientEvents>;
-    private onDeath: (userId: string) => void;
+    private onDeath: (userId: string, attackerId?: string) => void;
 
-    constructor(io: Server<ClientToServerEvents, ServerToClientEvents>, onDeath: (userId: string) => void) {
+    constructor(io: Server<ClientToServerEvents, ServerToClientEvents>, onDeath: (userId: string, attackerId?: string) => void) {
         this.io = io;
         this.onDeath = onDeath;
     }
@@ -45,18 +47,12 @@ export class MineSystem {
      * Spawn a mine at random location
      */
     spawn(): void {
-        const padding = 100;
-        // Assuming a fixed map size for now, or we could pass map dimensions
-        const mapWidth = 4000; // Default large map
-        const mapHeight = 1000;
-
-        // For now, let's use a smaller area that matches typical screen size to ensure visibility during testing
-        // In a real game, this should be the full map size
-        const x = padding + Math.random() * (mapWidth - padding * 2);
-        const y = padding + Math.random() * (mapHeight - padding * 2);
+        // Spawn mine at random location (centered coordinates)
+        const x = (Math.random() - 0.5) * MAP_WIDTH;
+        const y = (Math.random() - 0.5) * MAP_HEIGHT;
 
         const mine: Mine = {
-            id: `mine-${this.nextId++}-${Date.now()}`,
+            id: `mine - ${this.nextId++} -${Date.now()} `,
             x,
             y,
             radius: this.mineRadius,
@@ -69,7 +65,7 @@ export class MineSystem {
         // Broadcast new mine to all clients
         this.io.emit('mine:spawn', mine);
 
-        console.log(`💣 Mine spawned at ${Math.round(x)}, ${Math.round(y)}`);
+        console.log(`💣 Mine spawned at ${Math.round(x)}, ${Math.round(y)} `);
     }
 
     /**
@@ -190,7 +186,7 @@ export class MineSystem {
                 });
 
                 if (oldHealth > 0 && newHealth <= 0) {
-                    this.onDeath(user.id);
+                    this.onDeath(user.id, triggeredByUserId);
                 }
 
                 if (triggeredByUserId && newHealth <= 0 && user.health > 0) {

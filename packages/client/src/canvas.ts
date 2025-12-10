@@ -1,3 +1,4 @@
+import { MAP_HEIGHT, MAP_WIDTH } from '@awesome-game/shared';
 import { ReactiveGrid } from './grid.js';
 import { DEFAULT_SHIP_SHAPE, drawShipShape, type ShipShape } from './shapes.js';
 
@@ -25,7 +26,7 @@ export class CanvasManager {
     this.ctx = context;
 
     // Initialize reactive grid
-    this.grid = new ReactiveGrid(window.innerWidth, window.innerHeight);
+    this.grid = new ReactiveGrid(MAP_WIDTH, MAP_HEIGHT);
 
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -37,7 +38,6 @@ export class CanvasManager {
   private resize(): void {
     this.canvas.width = window.innerWidth;
     this.canvas.height = window.innerHeight;
-    this.grid.resize(window.innerWidth, window.innerHeight);
   }
 
   /**
@@ -49,9 +49,7 @@ export class CanvasManager {
       this.ctx.fillStyle = '#000';
       this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-      // Update and draw reactive grid
-      this.grid.update();
-      this.grid.render(this.ctx);
+      // Grid update/render moved to main loop for camera support
 
       // Call render function
       renderFn();
@@ -93,6 +91,8 @@ export class CanvasManager {
     this.shipShape = shape;
   }
 
+  private shipCache: Map<string, HTMLCanvasElement> = new Map();
+
   /**
    * Draw a cursor at the specified position (Geometry Wars style)
    */
@@ -117,24 +117,28 @@ export class CanvasManager {
       this.ctx.stroke();
       this.ctx.restore();
     } else {
-      // Player ship using existing shape
-      drawShipShape(this.ctx, this.shipShape, x, y, rotation, color);
+    // Check cache for this color
+    let shipCanvas = this.shipCache.get(color);
 
-      // Direction dash indicating facing
-      const dashLen = 18;
-      const tipX = x + Math.cos(rotation) * 26;
-      const tipY = y + Math.sin(rotation) * 26;
-      const tailX = x + Math.cos(rotation) * (26 - dashLen);
-      const tailY = y + Math.sin(rotation) * (26 - dashLen);
-      this.ctx.save();
-      this.ctx.strokeStyle = color;
-      this.ctx.lineWidth = 2;
-      this.ctx.beginPath();
-      this.ctx.moveTo(tailX, tailY);
-      this.ctx.lineTo(tipX, tipY);
-      this.ctx.stroke();
-      this.ctx.restore();
+    if (!shipCanvas) {
+      // Create new cached ship sprite
+      shipCanvas = document.createElement('canvas');
+      const size = 100; // Enough for glow
+      shipCanvas.width = size;
+      shipCanvas.height = size;
+      const ctx = shipCanvas.getContext('2d')!;
+
+      // Draw centered in cache canvas
+      drawShipShape(ctx, this.shipShape, size / 2, size / 2, 0, color); // Draw upright
+      this.shipCache.set(color, shipCanvas);
     }
+
+    // Draw ship from cache
+    this.ctx.save();
+    this.ctx.translate(x, y);
+    this.ctx.rotate(rotation);
+    this.ctx.drawImage(shipCanvas, -50, -50); // Offset by half size
+    this.ctx.restore();
 
     // Save context for UI elements
     this.ctx.save();
@@ -190,6 +194,7 @@ export class CanvasManager {
     // Restore context state
     this.ctx.restore();
   }
+}
 
   /**
    * Get canvas element

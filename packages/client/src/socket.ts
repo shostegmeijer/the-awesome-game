@@ -19,8 +19,10 @@ type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 export class SocketManager {
   private socket: TypedSocket;
 
-  constructor(serverUrl: string) {
-    this.socket = io(serverUrl) as TypedSocket;
+  constructor(serverUrl: string, playerKey?: string) {
+    this.socket = io(serverUrl, {
+      query: { playerKey }
+    }) as TypedSocket;
 
     // Connection event listeners
     this.socket.on('connect', () => {
@@ -68,6 +70,13 @@ export class SocketManager {
    */
   emitLaserShoot(x: number, y: number, angle: number): void {
     this.socket.emit('laser:shoot', { x, y, angle });
+  }
+
+  /**
+   * Emit health damage to server
+   */
+  emitHealthDamage(health: number, attackerId?: string): void {
+    this.socket.emit('health:damage', { userId: this.socket.id, health, attackerId });
   }
 
   /**

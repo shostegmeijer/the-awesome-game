@@ -72,6 +72,7 @@ export interface BulletUpdatePayload {
 export interface HealthUpdatePayload {
   userId: string;
   health: number;
+  attackerId?: string;
 }
 
 // Socket.io event map for type safety
@@ -177,6 +178,15 @@ export interface ServerToClientEvents {
   'admin:removeBot:ok': (data: { removed: string }) => void;
   'admin:settings': (data: AdminSettingsPayload) => void;
   'player:respawn': (data: PlayerRespawnPayload) => void;
+  'player:killed': (data: PlayerKilledPayload) => void;
+  'player:info': (data: PlayerInfoPayload) => void;
+}
+
+export interface PlayerKilledPayload {
+  victimId: string;
+  victimName: string;
+  attackerId: string;
+  attackerName: string;
 }
 
 export interface PlayerRespawnPayload {
@@ -184,6 +194,12 @@ export interface PlayerRespawnPayload {
   x: number;
   y: number;
   respawnTime: number; // Timestamp when respawn happens
+}
+
+export interface PlayerInfoPayload {
+  userId: string;
+  label: string;
+  color: string;
 }
 
 export interface ClientToServerEvents {

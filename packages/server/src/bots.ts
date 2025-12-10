@@ -52,6 +52,10 @@ export class BotSystem {
             anyBot.respawnAt = Date.now() + 3000; // 3s respawn delay
           } else if (Date.now() >= anyBot.respawnAt) {
             setBotHealth(bot.id, s.botHealth);
+            // Reposition safely within map on respawn
+            const rx = padding + Math.random() * (mapWidth - padding * 2);
+            const ry = padding + Math.random() * (mapHeight - padding * 2);
+            setBotPosition(bot.id, rx, ry);
             anyBot.respawnAt = null;
           }
           // Do not move/shoot/emit while dead
@@ -64,8 +68,11 @@ export class BotSystem {
         const newHeading = bot.heading + (Math.random() - 0.5) * 0.8; // stronger turn
         setBotHeading(bot.id, newHeading);
       }
-      let nx = bot.x + Math.cos(bot.heading) * speedJitter;
-      let ny = bot.y + Math.sin(bot.heading) * speedJitter;
+      // Clamp current position defensively inside map before moving
+      let cx = Math.min(Math.max(bot.x, padding), mapWidth - padding);
+      let cy = Math.min(Math.max(bot.y, padding), mapHeight - padding);
+      let nx = cx + Math.cos(bot.heading) * speedJitter;
+      let ny = cy + Math.sin(bot.heading) * speedJitter;
       // Bounce from walls
       if (nx < padding || nx > mapWidth - padding) {
         setBotHeading(bot.id, Math.PI - bot.heading);
@@ -83,7 +90,7 @@ export class BotSystem {
           x: nx,
           y: ny,
           rotation: 0,
-          color: '#ff66aa',
+          color: '#00aaff',
           label: bot.label,
           health: bot.health,
           type: 'bot',

@@ -12,16 +12,22 @@ export interface UserState {
   lastUpdate: number;
   weaponType: string; // Track current weapon
   radius: number; // Collision radius
+  kills: number;
+  deaths: number;
+  playerKey?: string; // INNSPIRE hub player key
+  scoreSubmitted: boolean; // Track if score has been submitted to hub
 }
+
+import { MAP_HEIGHT, MAP_WIDTH } from '@awesome-game/shared';
 
 const users = new Map<string, UserState>();
 
 /**
  * Add a new user to the state
  */
-export function addUser(id: string): UserState {
+export function addUser(id: string, playerKey?: string): UserState {
   const color = generateColor();
-  const label = `User ${users.size + 1}`;
+  const label = playerKey ? `Player ${users.size + 1}` : `User ${users.size + 1}`;
   const user: UserState = {
     id,
     color,
@@ -33,10 +39,14 @@ export function addUser(id: string): UserState {
     points: 0,
     lastUpdate: Date.now(),
     weaponType: 'machineGun',
-    radius: 25 // Standard ship radius
+    radius: 25, // Standard ship radius
+    kills: 0,
+    deaths: 0,
+    playerKey,
+    scoreSubmitted: false
   };
   users.set(id, user);
-  console.log(`✅ User added: ${label} (${id}) - ${color}`);
+  console.log(`✅ User added: ${label} (${id}) ${playerKey ? `[${playerKey}]` : ''} - ${color}`);
   return user;
 }
 
@@ -102,8 +112,10 @@ export function respawnUser(id: string): UserState | null {
   const user = users.get(id);
   if (user) {
     user.health = 100;
-    user.x = Math.random() * 2000; // Random position
-    user.y = Math.random() * 2000;
+    user.health = 100;
+    // Respawn at random position (centered coordinates)
+    user.x = (Math.random() - 0.5) * MAP_WIDTH;
+    user.y = (Math.random() - 0.5) * MAP_HEIGHT;
     user.weaponType = 'machineGun'; // Reset weapon
     console.log(`✨ ${user.label} respawned at ${Math.round(user.x)}, ${Math.round(user.y)}`);
     return user;
@@ -170,7 +182,7 @@ export interface GameSettings {
 
 let settings: GameSettings = {
   botSpeed: 4.0,
-  botCount: 0,
+  botCount: 5,
   botHealth: 50,
   playerStartingHealth: 100
 };
@@ -179,6 +191,64 @@ export function getSettings(): GameSettings { return settings; }
 export function updateSettings(partial: Partial<GameSettings>): GameSettings {
   settings = { ...settings, ...partial };
   return settings;
+}
+
+/**
+ * Increment user kills
+ */
+export function addKill(id: string): number {
+  const user = users.get(id);
+  if (user) {
+    user.kills++;
+    return user.kills;
+  }
+  return 0;
+}
+
+/**
+ * Increment user deaths
+ */
+export function addDeath(id: string): number {
+  const user = users.get(id);
+  if (user) {
+    user.deaths++;
+    return user.deaths;
+  }
+  return 0;
+}
+
+/**
+ * Get leaderboard sorted by score (kills - deaths)
+ */
+export function getLeaderboard(): Array<{ userId: string; score: number; user: UserState }> {
+  const leaderboard = Array.from(users.entries())
+    .map(([userId, user]) => ({
+      userId,
+      score: user.kills * 100 - user.deaths * 50, // Same scoring as client
+      user
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  return leaderboard;
+}
+
+/**
+ * Get user rank (1-based)
+ */
+export function getUserRank(userId: string): number {
+  const leaderboard = getLeaderboard();
+  const index = leaderboard.findIndex(entry => entry.userId === userId);
+  return index >= 0 ? index + 1 : 0;
+}
+
+/**
+ * Mark score as submitted for a user
+ */
+export function markScoreSubmitted(id: string): void {
+  const user = users.get(id);
+  if (user) {
+    user.scoreSubmitted = true;
+  }
 }
 
 /**
