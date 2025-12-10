@@ -1,4 +1,4 @@
-import { ClientToServerEvents, MAP_WIDTH, ServerToClientEvents } from '@awesome-game/shared';
+import { ClientToServerEvents, MAP_HEIGHT, MAP_WIDTH, ServerToClientEvents } from '@awesome-game/shared';
 import { Server } from 'socket.io';
 import { BulletSystem } from './bullets.js';
 import { addBot, getAllBots, getSettings, removeBot, setBotHeading, setBotHealth, setBotPosition } from './state.js';
@@ -40,14 +40,8 @@ export class BotSystem {
       bots = getAllBots();
     }
 
-    // Movement params - use centered coordinates like players
-    const padding = 50;
-    const halfWidth = MAP_WIDTH / 2;
-    const halfHeight = MAP_WIDTH / 2; // Note: MAP_HEIGHT would be better but keeping MAP_WIDTH for now
-    const minX = -halfWidth + padding;
-    const maxX = halfWidth - padding;
-    const minY = -halfHeight + padding;
-    const maxY = halfHeight - padding;
+    // Movement params
+    const mapWidth = MAP_WIDTH, mapHeight = MAP_HEIGHT, padding = 50;
     const baseSpeed = s.botSpeed; // admin-controlled
 
       bots.forEach(bot => {
@@ -58,15 +52,17 @@ export class BotSystem {
             anyBot.respawnAt = Date.now() + 3000; // 3s respawn delay
           } else if (Date.now() >= anyBot.respawnAt) {
             setBotHealth(bot.id, s.botHealth);
-            // Reposition safely within map on respawn (centered coordinates)
-            const rx = (Math.random() - 0.5) * (MAP_WIDTH - padding * 2);
-            const ry = (Math.random() - 0.5) * (MAP_WIDTH - padding * 2);
+            // Reposition safely within map on respawn
+            const rx = (Math.random() - 0.5) * (mapWidth - padding * 2);
+            const ry = (Math.random() - 0.5) * (mapHeight - padding * 2);
             setBotPosition(bot.id, rx, ry);
             anyBot.respawnAt = null;
           }
           // Do not move/shoot/emit while dead
           return;
         }
+      // Emit explosion when bot dies (once)
+      // Note: handled above when health<=0. If needed, we could emit here when transitioning to dead state.
       // Randomize speed a bit per tick
       const speedJitter = baseSpeed * (1.0 + Math.random() * 1.2); // 1.0x–2.2x
       // Occasionally change heading
@@ -74,19 +70,21 @@ export class BotSystem {
         const newHeading = bot.heading + (Math.random() - 0.5) * 0.8; // stronger turn
         setBotHeading(bot.id, newHeading);
       }
-      // Clamp current position defensively inside map before moving (centered coordinates)
-      let cx = Math.min(Math.max(bot.x, minX), maxX);
-      let cy = Math.min(Math.max(bot.y, minY), maxY);
+      // Clamp current position defensively inside centered map before moving
+      const halfW = mapWidth / 2;
+      const halfH = mapHeight / 2;
+      let cx = Math.min(Math.max(bot.x, -halfW + padding), halfW - padding);
+      let cy = Math.min(Math.max(bot.y, -halfH + padding), halfH - padding);
       let nx = cx + Math.cos(bot.heading) * speedJitter;
       let ny = cy + Math.sin(bot.heading) * speedJitter;
       // Bounce from walls (centered coordinates)
-      if (nx < minX || nx > maxX) {
+      if (nx < -halfW + padding || nx > halfW - padding) {
         setBotHeading(bot.id, Math.PI - bot.heading);
-        nx = Math.min(Math.max(nx, minX), maxX);
+        nx = Math.min(Math.max(nx, -halfW + padding), halfW - padding);
       }
-      if (ny < minY || ny > maxY) {
+      if (ny < -halfH + padding || ny > halfH - padding) {
         setBotHeading(bot.id, -bot.heading);
-        ny = Math.min(Math.max(ny, minY), maxY);
+        ny = Math.min(Math.max(ny, -halfH + padding), halfH - padding);
       }
       setBotPosition(bot.id, nx, ny);
 
