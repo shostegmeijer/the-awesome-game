@@ -3,7 +3,7 @@
  */
 
 import { PowerUpData, WeaponType } from '@awesome-game/shared';
-import { WEAPONS } from './weapons.js';
+import { WEAPONS, WeaponType as ClientWeaponType } from './weapons.js';
 
 interface ClientPowerUp extends PowerUpData {
   pulsePhase: number;
@@ -26,34 +26,100 @@ export class PowerUpSystem {
       const ctx = canvas.getContext('2d')!;
       const centerX = 50;
       const centerY = 50;
-      const size = 30;
 
-      // Outer glow ring
-      ctx.shadowBlur = 20;
-      ctx.shadowColor = weapon.color;
+      // Setup stroke style - no fills, only outlines
       ctx.strokeStyle = weapon.color;
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 2;
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = weapon.color;
+      ctx.lineCap = 'round';
 
+      // Render bullet pattern preview based on weapon properties
+      if (weapon.type === ClientWeaponType.MACHINE_GUN) {
+        // Single line (1 bullet, no spread)
+        ctx.beginPath();
+        ctx.moveTo(centerX - 20, centerY);
+        ctx.lineTo(centerX + 20, centerY);
+        ctx.stroke();
+
+      } else if (weapon.type === ClientWeaponType.TRIPLE_SHOT) {
+        // 3 lines with spread pattern
+        const bulletLength = 18;
+        const spread = 0.2;
+        for (let i = 0; i < 3; i++) {
+          const angle = -spread + (spread * i);
+          const startX = centerX - Math.cos(angle) * bulletLength;
+          const startY = centerY - Math.sin(angle) * bulletLength;
+          const endX = centerX + Math.cos(angle) * bulletLength;
+          const endY = centerY + Math.sin(angle) * bulletLength;
+
+          ctx.beginPath();
+          ctx.moveTo(startX, startY);
+          ctx.lineTo(endX, endY);
+          ctx.stroke();
+        }
+
+      } else if (weapon.type === ClientWeaponType.SHOTGUN) {
+        // Wide spread fan (simplified - show 7 lines instead of 20)
+        const bulletLength = 20;
+        const totalSpread = 0.8; // Wide spread angle
+        const displayBullets = 7;
+        for (let i = 0; i < displayBullets; i++) {
+          const angle = -totalSpread / 2 + (totalSpread * i / (displayBullets - 1));
+          const startX = centerX;
+          const startY = centerY;
+          const endX = centerX + Math.cos(angle) * bulletLength;
+          const endY = centerY + Math.sin(angle) * bulletLength;
+
+          ctx.beginPath();
+          ctx.moveTo(startX, startY);
+          ctx.lineTo(endX, endY);
+          ctx.stroke();
+        }
+
+      } else if (weapon.type === ClientWeaponType.ROCKET) {
+        // Large single projectile (diamond shape)
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY - 18);
+        ctx.lineTo(centerX + 18, centerY);
+        ctx.lineTo(centerX, centerY + 18);
+        ctx.lineTo(centerX - 18, centerY);
+        ctx.closePath();
+        ctx.stroke();
+
+      } else if (weapon.type === ClientWeaponType.LASER) {
+        // Long continuous beam
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(centerX - 25, centerY);
+        ctx.lineTo(centerX + 25, centerY);
+        ctx.stroke();
+
+        // Side decorative lines
+        ctx.lineWidth = 1.5;
+        for (let i = 0; i < 3; i++) {
+          const offset = -10 + i * 10;
+          ctx.beginPath();
+          ctx.moveTo(centerX - 22, centerY + offset);
+          ctx.lineTo(centerX + 22, centerY + offset);
+          ctx.stroke();
+        }
+      }
+
+      // Universal circle frame for ALL powerups (consistent visual language)
+      ctx.lineWidth = 2.5;
+      ctx.shadowBlur = 15;
       ctx.beginPath();
-      ctx.arc(centerX, centerY, size, 0, Math.PI * 2);
+      ctx.arc(centerX, centerY, 30, 0, Math.PI * 2);
       ctx.stroke();
 
-      // Inner bright circle
-      ctx.fillStyle = weapon.color;
-      ctx.shadowBlur = 15;
-      ctx.shadowColor = '#FFFFFF';
-
+      // Inner circle for extra depth
+      ctx.lineWidth = 1.5;
+      ctx.shadowBlur = 8;
       ctx.beginPath();
-      ctx.arc(centerX, centerY, size * 0.7, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Icon/text
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = '#000000';
-      ctx.font = 'bold 24px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(weapon.icon, centerX, centerY);
+      ctx.arc(centerX, centerY, 26, 0, Math.PI * 2);
+      ctx.stroke();
 
       this.powerupCanvases.set(weapon.type, canvas);
     });
