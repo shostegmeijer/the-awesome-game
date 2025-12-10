@@ -61,13 +61,25 @@ export function getAllUsers(): Map<string, UserState> {
 }
 
 /**
- * Generate a random color for a user
+ * Generate a random neon color for a user (Geometry Wars style)
  */
 function generateColor(): string {
   const colors = [
-    '#FF5733', '#33FF57', '#3357FF', '#FF33F5', '#F5FF33',
-    '#33FFF5', '#FF8C33', '#8C33FF', '#33FF8C', '#FF3333',
-    '#33FFFF', '#FFFF33', '#FF33CC', '#33CCFF', '#CCFF33'
+    '#00FFFF', // Cyan
+    '#FF00FF', // Magenta
+    '#FFFF00', // Yellow
+    '#00FF00', // Lime green
+    '#FF0099', // Hot pink
+    '#00FFAA', // Aqua
+    '#FF6600', // Orange
+    '#9900FF', // Purple
+    '#00FF66', // Spring green
+    '#FF3366', // Red-pink
+    '#66FF00', // Chartreuse
+    '#0099FF', // Sky blue
+    '#FF9900', // Gold
+    '#CC00FF', // Violet
+    '#00FFCC'  // Turquoise
   ];
   return colors[users.size % colors.length];
 }

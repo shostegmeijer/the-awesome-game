@@ -10,7 +10,7 @@ const server = createServer(app);
 // Initialize Socket.io with type safety and CORS
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
   cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    origin: process.env.CLIENT_URL || '*', // Allow all origins on local network
     methods: ['GET', 'POST']
   }
 });
