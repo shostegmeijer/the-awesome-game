@@ -4,6 +4,7 @@ import { CursorManager } from './cursor.js';
 import { ParticleSystem } from './particles.js';
 import { BulletSystem } from './bullets.js';
 import { ControlsManager } from './controls.js';
+import { ExplosionSystem } from './explosions.js';
 import './styles.css';
 
 console.log('🎮 Initializing multiplayer cursor game...');
@@ -24,6 +25,9 @@ const particles = new ParticleSystem();
 
 // Initialize bullet system
 const bullets = new BulletSystem();
+
+// Initialize explosion system
+const explosions = new ExplosionSystem();
 
 // Initialize controls
 const controls = new ControlsManager();
@@ -149,12 +153,6 @@ canvas.startRenderLoop(() => {
 
   localCursor.rotation += rotationDiff * rotationSpeed;
 
-  // Spawn particles based on movement speed (more particles = faster movement)
-  const speed = Math.sqrt(dx * dx + dy * dy);
-  if (speed > 0.5) {
-    particles.spawn(localCursor.x, localCursor.y, localCursor.rotation, '#FF6600', speed);
-  }
-
   // Apply force to grid from local player movement
   grid.applyForce(localCursor.x, localCursor.y, dx * followSpeed, dy * followSpeed);
 
@@ -175,6 +173,9 @@ canvas.startRenderLoop(() => {
   // Update particles
   particles.update();
 
+  // Update explosions
+  explosions.update();
+
   // Update bullets and apply grid forces
   bullets.update();
 
@@ -186,14 +187,83 @@ canvas.startRenderLoop(() => {
   // Check collisions - local player (use socket ID to avoid hitting yourself)
   const mySocketId = socket.getSocketId();
   if (mySocketId && bullets.checkCollision(localCursor.x, localCursor.y, SHIP_COLLISION_RADIUS, mySocketId)) {
+    const oldHealth = localCursor.health;
     localCursor.health = Math.max(0, localCursor.health - BULLET_DAMAGE);
     console.log(`💥 You were hit! Health: ${localCursor.health}`);
+
+    // Death explosion!
+    if (oldHealth > 0 && localCursor.health <= 0) {
+      console.log('💀 You died!');
+      explosions.explode(localCursor.x, localCursor.y, localCursor.color, 4);
+      particles.explode(localCursor.x, localCursor.y, localCursor.color, 1000); // WAY more particles!
+
+      // MASSIVE grid explosion shockwave - multiple rings at different radii
+      const explosionForce = 100; // MUCH stronger force
+      const rings = 5; // Multiple shockwave rings
+      for (let ring = 0; ring < rings; ring++) {
+        const ringRadius = ring * 30; // 0, 30, 60, 90, 120 pixels
+        for (let angle = 0; angle < Math.PI * 2; angle += 0.1) { // More force points
+          const forceX = Math.cos(angle) * explosionForce;
+          const forceY = Math.sin(angle) * explosionForce;
+          const x = localCursor.x + Math.cos(angle) * ringRadius;
+          const y = localCursor.y + Math.sin(angle) * ringRadius;
+          grid.applyForce(x, y, forceX, forceY);
+        }
+      }
+
+      // Respawn after 10 seconds
+      setTimeout(() => {
+        localCursor.health = 100;
+        localCursor.x = window.innerWidth / 2;
+        localCursor.y = window.innerHeight / 2;
+        targetPosition.x = localCursor.x;
+        targetPosition.y = localCursor.y;
+        console.log('✨ You respawned!');
+      }, 10000);
+    }
   }
 
   // Check collisions - remote players
   cursors.getCursors().forEach((cursor, userId) => {
     if (bullets.checkCollision(cursor.x, cursor.y, SHIP_COLLISION_RADIUS, userId)) {
-      cursors.damageCursor(userId, BULLET_DAMAGE);
+      const oldHealth = cursor.health;
+      const isDead = cursors.damageCursor(userId, BULLET_DAMAGE);
+
+      // Death explosion for remote players!
+      if (isDead && oldHealth > 0) {
+        console.log(`💀 ${cursor.label} died!`);
+        explosions.explode(cursor.x, cursor.y, cursor.color, 4);
+        particles.explode(cursor.x, cursor.y, cursor.color, 1000); // WAY more particles!
+
+        // MASSIVE grid explosion shockwave - multiple rings at different radii
+        const explosionForce = 100; // MUCH stronger force
+        const rings = 5; // Multiple shockwave rings
+        for (let ring = 0; ring < rings; ring++) {
+          const ringRadius = ring * 30; // 0, 30, 60, 90, 120 pixels
+          for (let angle = 0; angle < Math.PI * 2; angle += 0.1) { // More force points
+            const forceX = Math.cos(angle) * explosionForce;
+            const forceY = Math.sin(angle) * explosionForce;
+            const x = cursor.x + Math.cos(angle) * ringRadius;
+            const y = cursor.y + Math.sin(angle) * ringRadius;
+            grid.applyForce(x, y, forceX, forceY);
+          }
+        }
+
+        // Remove dead player (bot will respawn)
+        if (userId === botId) {
+          cursors.removeCursor(botId);
+          // Respawn bot after 10 seconds
+          setTimeout(() => {
+            const centerX = window.innerWidth / 2;
+            const centerY = window.innerHeight / 2;
+            botAngle = Math.random() * Math.PI * 2; // Random starting position
+            const botX = centerX + Math.cos(botAngle) * botRadius;
+            const botY = centerY + Math.sin(botAngle) * botRadius;
+            cursors.updateCursor(botId, botX, botY, '#FF00FF', 'Bot');
+            console.log('🤖 Bot respawned!');
+          }, 10000);
+        }
+      }
     }
   });
 
@@ -207,14 +277,30 @@ canvas.startRenderLoop(() => {
   const ctx = canvas.getCanvas().getContext('2d')!;
   particles.render(ctx);
 
+  // Render explosion rings
+  explosions.render(ctx);
+
   // Render bullets
   bullets.render(ctx);
 
-  // Render local cursor (your own) with rotation and health
-  canvas.drawCursor(localCursor.x, localCursor.y, localCursor.color, localCursor.label, localCursor.rotation, localCursor.health);
+  // Render local cursor (your own) with rotation and health - only if alive
+  if (localCursor.health > 0) {
+    // Spawn particles based on movement speed (more particles = faster movement)
+    const dx = targetPosition.x - localCursor.x;
+    const dy = targetPosition.y - localCursor.y;
+    const speed = Math.sqrt(dx * dx + dy * dy);
+    if (speed > 0.5) {
+      particles.spawn(localCursor.x, localCursor.y, localCursor.rotation, '#FF6600', speed);
+    }
+
+    canvas.drawCursor(localCursor.x, localCursor.y, localCursor.color, localCursor.label, localCursor.rotation, localCursor.health);
+  }
 
   // Render all remote cursors with rotation and spawn their particles
   cursors.getCursors().forEach((cursor) => {
+    // Skip dead players
+    if (cursor.health <= 0) return;
+
     // Calculate movement for particle spawning
     const dx = cursor.x - cursor.prevX;
     const dy = cursor.y - cursor.prevY;

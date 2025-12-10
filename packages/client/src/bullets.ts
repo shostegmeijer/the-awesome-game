@@ -31,28 +31,29 @@ export class BulletSystem {
   }
 
   /**
-   * Pre-render bullet texture (called once)
+   * Pre-render bullet texture with glow (called once - still fast!)
    */
   private renderTexture(): void {
     const ctx = this.textureCtx;
 
     ctx.clearRect(0, 0, 18, 10);
 
-    // Outer glow line
-    ctx.shadowBlur = 15; // Reduced glow for shorter bullet
+    // Outer glow with shadowBlur (baked into texture!)
+    ctx.shadowBlur = 18;
     ctx.shadowColor = '#00FFFF';
     ctx.strokeStyle = '#00FFFF';
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth = 3;
 
     ctx.beginPath();
-    ctx.moveTo(16, 5); // Shorter line
+    ctx.moveTo(16, 5);
     ctx.lineTo(2, 5);
     ctx.stroke();
 
-    // Bright core line
-    ctx.shadowBlur = 8;
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 1.5;
+    // Bright white core
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = '#FFFFFF';
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 2;
 
     ctx.beginPath();
     ctx.moveTo(16, 5);

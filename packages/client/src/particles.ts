@@ -30,21 +30,20 @@ export class ParticleSystem {
   }
 
   /**
-   * Pre-render particle texture (called once)
+   * Pre-render particle texture with glow (called once - still fast!)
    */
   private renderTexture(): void {
     const ctx = this.textureCtx;
     const centerX = 10;
     const centerY = 10;
 
-    // Draw smaller glowing line texture
     ctx.clearRect(0, 0, 20, 20);
 
-    // Outer glow
-    ctx.shadowBlur = 10;
+    // Outer glow with shadowBlur (baked into texture, not per-frame!)
+    ctx.shadowBlur = 12;
     ctx.shadowColor = '#FF6600';
     ctx.strokeStyle = '#FF6600';
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 3;
 
     ctx.beginPath();
     ctx.moveTo(centerX - 8, centerY);
@@ -52,14 +51,61 @@ export class ParticleSystem {
     ctx.stroke();
 
     // Bright core
-    ctx.shadowBlur = 4;
-    ctx.strokeStyle = '#FFaa44';
-    ctx.lineWidth = 1;
+    ctx.shadowBlur = 6;
+    ctx.shadowColor = '#FFaa44';
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 1.5;
 
     ctx.beginPath();
     ctx.moveTo(centerX - 8, centerY);
     ctx.lineTo(centerX + 8, centerY);
     ctx.stroke();
+  }
+
+  /**
+   * Create explosion with fast AND slow particles (slow ones match ring color/speed)
+   */
+  explode(x: number, y: number, color: string = '#FF6600', particleCount: number = 500): void {
+    // Fast particles (2/3 of total) - explosive orange burst
+    const fastCount = Math.floor(particleCount * 0.66);
+    for (let i = 0; i < fastCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 10 + Math.random() * 40; // 10-50 px/frame
+      const spreadAngle = angle + (Math.random() - 0.5) * 0.5;
+
+      this.particles.push({
+        x,
+        y,
+        vx: Math.cos(spreadAngle) * speed,
+        vy: Math.sin(spreadAngle) * speed,
+        life: 1,
+        size: 15 + Math.random() * 25, // 15-40px
+        color: '#FF6600' // Orange fast particles
+      });
+    }
+
+    // Slow particles (1/3 of total) - match ring color and speed
+    const slowCount = particleCount - fastCount;
+    for (let i = 0; i < slowCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 4 + Math.random() * 5; // 4-9 px/frame (match faster ring speed!)
+      const spreadAngle = angle + (Math.random() - 0.5) * 0.3;
+
+      this.particles.push({
+        x,
+        y,
+        vx: Math.cos(spreadAngle) * speed,
+        vy: Math.sin(spreadAngle) * speed,
+        life: 1,
+        size: 20 + Math.random() * 30, // 20-50px - larger/slower
+        color // Use explosion color (cyan, magenta, etc!)
+      });
+    }
+
+    // Keep particle count under control
+    if (this.particles.length > this.maxParticles * 15) {
+      this.particles = this.particles.slice(-this.maxParticles * 15);
+    }
   }
 
   /**
@@ -105,8 +151,14 @@ export class ParticleSystem {
       particle.vx *= 0.95;
       particle.vy *= 0.95;
 
-      // Fade out
-      particle.life -= 0.02;
+      // Fade out - slow particles live longer to match ring expansion
+      if (particle.color !== '#FF6600') {
+        // Slow colored particles: fade slower to reach same radius as rings (~80 frames)
+        particle.life -= 0.0125;
+      } else {
+        // Fast orange particles: fade quickly (~50 frames)
+        particle.life -= 0.02;
+      }
     });
 
     // Remove dead particles

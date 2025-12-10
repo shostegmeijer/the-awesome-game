@@ -13,8 +13,8 @@ body {
 #game-canvas {
   display: block;
   cursor: none;
-  /* Geometry Wars style bloom effect */
-  filter: contrast(1.2) brightness(1.1);
+  /* Light post-processing - NO blur, keep it sharp! */
+  filter: contrast(1.2) brightness(1.1) saturate(1.2);
   image-rendering: crisp-edges;
 }
 
