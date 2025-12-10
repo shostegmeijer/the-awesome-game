@@ -38,7 +38,16 @@ export function addUser(id: string): UserState {
   return user;
 }
 
-// ... removeUser ...
+/**
+ * Remove a user from the state
+ */
+export function removeUser(id: string): void {
+  const user = users.get(id);
+  if (user) {
+    users.delete(id);
+    console.log(`❌ User removed: ${user.label} (${id})`);
+  }
+}
 
 /**
  * Update cursor position for a user
