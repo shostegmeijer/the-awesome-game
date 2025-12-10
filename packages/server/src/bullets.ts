@@ -1,3 +1,5 @@
+import { MAP_WIDTH, MAP_HEIGHT } from '@awesome-game/shared';
+
 interface Bullet {
     id: string;
     userId: string;
@@ -38,6 +40,28 @@ export class BulletSystem {
             bullet.x += bullet.vx;
             bullet.y += bullet.vy;
             bullet.lifetime--;
+
+            // Bounce off walls
+            const halfW = MAP_WIDTH / 2;
+            const halfH = MAP_HEIGHT / 2;
+
+            // Horizontal bounce
+            if (bullet.x < -halfW) {
+                bullet.x = -halfW;
+                bullet.vx = -bullet.vx;
+            } else if (bullet.x > halfW) {
+                bullet.x = halfW;
+                bullet.vx = -bullet.vx;
+            }
+
+            // Vertical bounce
+            if (bullet.y < -halfH) {
+                bullet.y = -halfH;
+                bullet.vy = -bullet.vy;
+            } else if (bullet.y > halfH) {
+                bullet.y = halfH;
+                bullet.vy = -bullet.vy;
+            }
 
             // Remove dead bullets
             if (bullet.lifetime <= 0) {

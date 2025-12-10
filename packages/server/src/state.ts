@@ -11,7 +11,11 @@ export interface UserState {
   lastUpdate: number;
   weaponType: string; // Track current weapon
   radius: number; // Collision radius
+  kills: number;
+  deaths: number;
 }
+
+import { MAP_WIDTH, MAP_HEIGHT } from '@awesome-game/shared';
 
 const users = new Map<string, UserState>();
 
@@ -31,7 +35,9 @@ export function addUser(id: string): UserState {
     health: 100,
     lastUpdate: Date.now(),
     weaponType: 'machineGun',
-    radius: 25 // Standard ship radius
+    radius: 25, // Standard ship radius
+    kills: 0,
+    deaths: 0
   };
   users.set(id, user);
   console.log(`✅ User added: ${label} (${id}) - ${color}`);
@@ -89,13 +95,39 @@ export function respawnUser(id: string): UserState | null {
   const user = users.get(id);
   if (user) {
     user.health = 100;
-    user.x = Math.random() * 2000; // Random position
-    user.y = Math.random() * 2000;
+    user.health = 100;
+    // Respawn at random position (centered coordinates)
+    user.x = (Math.random() - 0.5) * MAP_WIDTH;
+    user.y = (Math.random() - 0.5) * MAP_HEIGHT;
     user.weaponType = 'machineGun'; // Reset weapon
     console.log(`✨ ${user.label} respawned at ${Math.round(user.x)}, ${Math.round(user.y)}`);
     return user;
   }
   return null;
+}
+
+/**
+ * Increment user kills
+ */
+export function addKill(id: string): number {
+  const user = users.get(id);
+  if (user) {
+    user.kills++;
+    return user.kills;
+  }
+  return 0;
+}
+
+/**
+ * Increment user deaths
+ */
+export function addDeath(id: string): number {
+  const user = users.get(id);
+  if (user) {
+    user.deaths++;
+    return user.deaths;
+  }
+  return 0;
 }
 
 /**

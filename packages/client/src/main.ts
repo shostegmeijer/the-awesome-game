@@ -12,6 +12,8 @@ import { ScoreManager } from './score.js';
 import { AnnouncementSystem } from './announcements.js';
 import { MineSystem } from './mines.js';
 import { LaserSystem } from './laser.js';
+import { Camera } from './camera.js';
+import { MAP_WIDTH, MAP_HEIGHT } from '@awesome-game/shared';
 import './styles.css';
 
 console.log('🎮 Initializing multiplayer cursor game...');
@@ -47,12 +49,13 @@ const scoreManager = new ScoreManager();
 const announcements = new AnnouncementSystem();
 const mines = new MineSystem();
 const lasers = new LaserSystem();
+const camera = new Camera(window.innerWidth, window.innerHeight);
 
 // Track local cursor position (bright cyan for visibility)
 let localCursor = { x: 0, y: 0, rotation: 0, health: 50, color: '#00FFFF', label: 'You' };
 let targetPosition = { x: 0, y: 0 }; // Mouse target position
 let respawnTimeEnd = 0; // Timestamp when respawn happens
-const followSpeed = 0.08; // Lower = more lag, higher = more responsive (increased delay)
+const followSpeed = 0.04; // Lower = more lag, higher = more responsive (increased delay)
 const rotationSpeed = 0.1; // Smooth rotation interpolation
 
 // Shooting rate limiting
@@ -162,6 +165,22 @@ socket.onPlayerRespawn((data) => {
   }
 });
 
+socket.on('player:killed', (data) => {
+  const myId = socket.getSocketId();
+
+  if (data.attackerId === myId && data.victimId !== myId) {
+    // I killed someone!
+    announcements.announceKill('You', data.victimName, 100);
+    scoreManager.addPoints(myId, 100);
+  } else if (data.victimId === myId) {
+    // I died (handled by death logic mostly, but could add specific message here)
+    announcements.show('WASTED', `Killed by ${data.attackerName}`, '#FF0000', 4000);
+  } else {
+    // Someone else killed someone else
+    announcements.show(`${data.attackerName} 🔫 ${data.victimName}`, '', '#FFFFFF', 2000);
+  }
+});
+
 // Handle bullet spawn from network
 socket.onBulletSpawn((data) => {
   const mySocketId = socket.getSocketId();
@@ -220,9 +239,11 @@ socket.on('mine:explode', (data) => {
   }
 
   // Announce if we triggered it
+  /*
   if (data.triggeredBy === socket.getSocketId() || data.triggeredBy === 'local') {
     announcements.announceMineExplosion('You', 0);
   }
+  */
 });
 
 // Handle powerup events
@@ -277,10 +298,29 @@ socket.on('laser:spawn', (data) => {
 // Get grid for applying forces
 const grid = canvas.getGrid();
 
+// Prerender map border
+const borderCanvas = document.createElement('canvas');
+borderCanvas.width = MAP_WIDTH + 100; // Add padding for glow
+borderCanvas.height = MAP_HEIGHT + 100;
+const borderCtx = borderCanvas.getContext('2d')!;
+
+// Draw border with bloom to offscreen canvas
+// We want the border to be centered in the canvas with 50px padding
+borderCtx.shadowBlur = 30;
+borderCtx.shadowColor = '#00FFFF';
+borderCtx.strokeStyle = '#00FFFF';
+borderCtx.lineWidth = 4;
+borderCtx.strokeRect(50, 50, MAP_WIDTH, MAP_HEIGHT);
+
+// Outer glow layer
+borderCtx.globalAlpha = 0.3;
+borderCtx.lineWidth = 10;
+borderCtx.strokeRect(50, 50, MAP_WIDTH, MAP_HEIGHT);
+
 // Initialize test bot if enabled
 if (TEST_BOT_ENABLED) {
-  const centerX = window.innerWidth / 2;
-  const centerY = window.innerHeight / 2;
+  const centerX = 0;
+  const centerY = 0;
   const botX = centerX + Math.cos(botAngle) * botRadius;
   const botY = centerY + Math.sin(botAngle) * botRadius;
 
@@ -289,14 +329,53 @@ if (TEST_BOT_ENABLED) {
   console.log('🤖 Test bot initialized');
 }
 
+// Handle window resize
+window.addEventListener('resize', () => {
+  camera.resize(window.innerWidth, window.innerHeight);
+});
+
 // Start render loop
 canvas.startRenderLoop(() => {
+  // Update camera to follow local player
+  camera.follow(localCursor.x, localCursor.y);
+
+  // Get rendering context
+  const ctx = canvas.getCanvas().getContext('2d')!;
+
+  // Apply camera transform (affects everything rendered after this)
+  camera.apply(ctx);
+
+  // Update and render grid (now in world space)
+  grid.update();
+  grid.render(ctx);
+
+  // Draw prerendered border (adjusted for centered coordinates)
+  // The border canvas has (0,0) at top-left + 50 padding.
+  // We drew the rect at (-W/2, -H/2).
+  // So to draw it correctly, we need to position the canvas such that its center aligns with (0,0).
+  // Canvas size is W+100, H+100. Center is at W/2+50, H/2+50.
+  // Wait, we translated 50,50 then drew at -W/2.
+  // So the top-left of the rect is at (50 - W/2, 50 - H/2) on the canvas.
+  // We want to draw this image so that the rect aligns with world coordinates.
+  // The rect top-left in world is -W/2, -H/2.
+  // The rect top-left in canvas is 50 - W/2, 50 - H/2.
+  // So if we draw the canvas at (-50, -50) relative to world origin? No.
+  // Let's simplify.
+  // World Rect: [-1000, -1000] to [1000, 1000].
+  // Canvas: 2100x2100.
+  // We want the canvas to cover [-1050, -1050] to [1050, 1050].
+  // So we drawImage at x=-1050, y=-1050.
+  ctx.drawImage(borderCanvas, -MAP_WIDTH / 2 - 50, -MAP_HEIGHT / 2 - 50);
   // Smooth follow: lerp local cursor toward target position
   const dx = targetPosition.x - localCursor.x;
   const dy = targetPosition.y - localCursor.y;
 
   localCursor.x += dx * followSpeed;
   localCursor.y += dy * followSpeed;
+
+  // Clamp position to map bounds (centered)
+  localCursor.x = Math.max(-MAP_WIDTH / 2, Math.min(localCursor.x, MAP_WIDTH / 2));
+  localCursor.y = Math.max(-MAP_HEIGHT / 2, Math.min(localCursor.y, MAP_HEIGHT / 2));
 
   // Calculate target rotation based on movement direction
   const targetRotation = Math.atan2(dy, dx);
@@ -316,8 +395,8 @@ canvas.startRenderLoop(() => {
   // Update test bot position (circular movement)
   if (TEST_BOT_ENABLED) {
     botAngle += botSpeed;
-    const centerX = window.innerWidth / 2;
-    const centerY = window.innerHeight / 2;
+    const centerX = 0;
+    const centerY = 0;
     const botX = centerX + Math.cos(botAngle) * botRadius;
     const botY = centerY + Math.sin(botAngle) * botRadius;
 
@@ -431,10 +510,15 @@ canvas.startRenderLoop(() => {
 
   // Check laser collisions - local player
   const mySocketId = socket.getSocketId();
-  if (mySocketId && lasers.checkCollision(localCursor.x, localCursor.y, SHIP_COLLISION_RADIUS, mySocketId)) {
+  const laserAttackerId = mySocketId ? lasers.checkCollision(localCursor.x, localCursor.y, SHIP_COLLISION_RADIUS, mySocketId) : null;
+
+  if (laserAttackerId) {
     const oldHealth = localCursor.health;
     localCursor.health = Math.max(0, localCursor.health - WEAPONS[WeaponType.LASER].damage);
     console.log(`🔥 Hit by laser! Health: ${localCursor.health}`);
+
+    // Send health update to server
+    socket.emitHealthDamage(localCursor.health, laserAttackerId);
 
     if (localCursor.health > 0) {
       particles.spawn(localCursor.x, localCursor.y, Math.random() * Math.PI * 2, '#00FF00', 5);
@@ -442,11 +526,19 @@ canvas.startRenderLoop(() => {
   }
 
   // Check collisions - local player (use socket ID to avoid hitting yourself)
-  if (mySocketId && bullets.checkCollision(localCursor.x, localCursor.y, SHIP_COLLISION_RADIUS, mySocketId)) {
+  // Check collisions - local player (use socket ID to avoid hitting yourself)
+  const hitBullet = mySocketId ? bullets.checkCollision(localCursor.x, localCursor.y, SHIP_COLLISION_RADIUS, mySocketId) : null;
+
+  if (hitBullet) {
     const oldHealth = localCursor.health;
-    const weapon = weaponManager.getCurrentWeapon();
-    localCursor.health = Math.max(0, localCursor.health - weapon.damage);
+    // Determine damage based on bullet type (rocket vs normal)
+    const damage = hitBullet.isRocket ? WEAPONS[WeaponType.ROCKET].damage : WEAPONS[WeaponType.MACHINE_GUN].damage;
+
+    localCursor.health = Math.max(0, localCursor.health - damage);
     console.log(`💥 You were hit! Health: ${localCursor.health}`);
+
+    // Send health update to server
+    socket.emitHealthDamage(localCursor.health, hitBullet.ownerId);
 
     // Hit particles (not death)
     if (localCursor.health > 0) {
@@ -462,7 +554,7 @@ canvas.startRenderLoop(() => {
       screenShake.shake(25, 500);
 
       // Death penalty
-      scoreManager.addPoints(mySocketId, -50);
+      scoreManager.addPoints(mySocketId!, -50);
 
       // MASSIVE grid explosion shockwave
       const explosionForce = 100;
@@ -557,8 +649,8 @@ canvas.startRenderLoop(() => {
   // Clean up stale cursors
   cursors.cleanupStaleCursors(5000);
 
-  // Get rendering context
-  const ctx = canvas.getCanvas().getContext('2d')!;
+  // Get rendering context - ALREADY GOT IT ABOVE
+  // const ctx = canvas.getCanvas().getContext('2d')!;
 
   // Apply screen shake
   ctx.save();
@@ -620,6 +712,9 @@ canvas.startRenderLoop(() => {
   // Reset screen shake
   ctx.restore();
 
+  // Reset camera transform for UI
+  camera.reset(ctx);
+
   // Render UI elements (not affected by screen shake)
   scoreManager.renderUI(ctx, socket.getSocketId() || 'local');
   announcements.render(ctx);
@@ -665,8 +760,10 @@ const throttledEmit = throttle((x: number, y: number, rotation: number) => {
 
 // Track mouse movement
 canvasElement.addEventListener('mousemove', (e: MouseEvent) => {
-  const x = e.clientX;
-  const y = e.clientY;
+  // Convert screen coordinates to world coordinates
+  const worldPos = camera.screenToWorld(e.clientX, e.clientY);
+  const x = worldPos.x;
+  const y = worldPos.y;
 
   // Update target position (cursor will smoothly follow)
   targetPosition.x = x;

@@ -1,5 +1,6 @@
 import { DEFAULT_SHIP_SHAPE, drawShipShape, type ShipShape } from './shapes.js';
 import { ReactiveGrid } from './grid.js';
+import { MAP_WIDTH, MAP_HEIGHT } from '@awesome-game/shared';
 
 /**
  * Canvas manager for rendering cursors
@@ -25,7 +26,7 @@ export class CanvasManager {
     this.ctx = context;
 
     // Initialize reactive grid
-    this.grid = new ReactiveGrid(window.innerWidth, window.innerHeight);
+    this.grid = new ReactiveGrid(MAP_WIDTH, MAP_HEIGHT);
 
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -37,7 +38,6 @@ export class CanvasManager {
   private resize(): void {
     this.canvas.width = window.innerWidth;
     this.canvas.height = window.innerHeight;
-    this.grid.resize(window.innerWidth, window.innerHeight);
   }
 
   /**
@@ -49,9 +49,7 @@ export class CanvasManager {
       this.ctx.fillStyle = '#000';
       this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-      // Update and draw reactive grid
-      this.grid.update();
-      this.grid.render(this.ctx);
+      // Grid update/render moved to main loop for camera support
 
       // Call render function
       renderFn();
@@ -93,12 +91,34 @@ export class CanvasManager {
     this.shipShape = shape;
   }
 
+  private shipCache: Map<string, HTMLCanvasElement> = new Map();
+
   /**
    * Draw a cursor at the specified position (Geometry Wars style)
    */
   drawCursor(x: number, y: number, color: string, label: string, rotation: number = 0, health: number = 100): void {
-    // Draw ship using configurable shape
-    drawShipShape(this.ctx, this.shipShape, x, y, rotation, color);
+    // Check cache for this color
+    let shipCanvas = this.shipCache.get(color);
+
+    if (!shipCanvas) {
+      // Create new cached ship sprite
+      shipCanvas = document.createElement('canvas');
+      const size = 100; // Enough for glow
+      shipCanvas.width = size;
+      shipCanvas.height = size;
+      const ctx = shipCanvas.getContext('2d')!;
+
+      // Draw centered in cache canvas
+      drawShipShape(ctx, this.shipShape, size / 2, size / 2, 0, color); // Draw upright
+      this.shipCache.set(color, shipCanvas);
+    }
+
+    // Draw ship from cache
+    this.ctx.save();
+    this.ctx.translate(x, y);
+    this.ctx.rotate(rotation);
+    this.ctx.drawImage(shipCanvas, -50, -50); // Offset by half size
+    this.ctx.restore();
 
     // Save context for UI elements
     this.ctx.save();

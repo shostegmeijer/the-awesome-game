@@ -71,6 +71,13 @@ export class SocketManager {
   }
 
   /**
+   * Emit health damage to server
+   */
+  emitHealthDamage(health: number, attackerId?: string): void {
+    this.socket.emit('health:damage', { userId: this.socket.id, health, attackerId });
+  }
+
+  /**
    * Get the socket ID
    */
   getSocketId(): string | undefined {

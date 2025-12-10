@@ -115,6 +115,8 @@ export class ExplosionSystem {
     ctx.save();
 
     this.rings.forEach(ring => {
+      ctx.save(); // Save current transform (camera)
+
       // Blinking effect - fade in and out rapidly
       const blink = Math.sin(ring.radius * 0.3) * 0.5 + 0.5;
       const alpha = ring.life * blink;
@@ -134,8 +136,7 @@ export class ExplosionSystem {
       ctx.scale(scale, scale);
       ctx.drawImage(texture, -textureSize / 2, -textureSize / 2);
 
-      // Reset transforms
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.restore(); // Restore transform (camera)
     });
 
     ctx.restore();

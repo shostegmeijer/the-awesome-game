@@ -16,6 +16,8 @@ export class ReactiveGrid {
   private gridSpacing = 80; // Increased to 80 for better performance
   private cols = 0;
   private rows = 0;
+  private width = 0;
+  private height = 0;
   private updateCounter = 0; // For skipping updates
 
   // Physics parameters (highly optimized)
@@ -33,6 +35,8 @@ export class ReactiveGrid {
    * Resize grid (call when canvas resizes)
    */
   resize(width: number, height: number): void {
+    this.width = width;
+    this.height = height;
     this.cols = Math.ceil(width / this.gridSpacing) + 1;
     this.rows = Math.ceil(height / this.gridSpacing) + 1;
 
@@ -41,8 +45,8 @@ export class ReactiveGrid {
     for (let y = 0; y < this.rows; y++) {
       const row: GridVertex[] = [];
       for (let x = 0; x < this.cols; x++) {
-        const restX = x * this.gridSpacing;
-        const restY = y * this.gridSpacing;
+        const restX = x * this.gridSpacing - width / 2;
+        const restY = y * this.gridSpacing - height / 2;
         row.push({
           restX,
           restY,
@@ -60,11 +64,14 @@ export class ReactiveGrid {
    * Apply force to grid from a moving object
    */
   applyForce(objectX: number, objectY: number, velocityX: number = 0, velocityY: number = 0): void {
-    // Calculate which grid cells might be affected
-    const minCol = Math.max(0, Math.floor((objectX - this.forceRadius) / this.gridSpacing));
-    const maxCol = Math.min(this.cols - 1, Math.ceil((objectX + this.forceRadius) / this.gridSpacing));
-    const minRow = Math.max(0, Math.floor((objectY - this.forceRadius) / this.gridSpacing));
-    const maxRow = Math.min(this.rows - 1, Math.ceil((objectY + this.forceRadius) / this.gridSpacing));
+    // Calculate which grid cells might be affected (convert world coords to grid index)
+    const gridX = objectX + this.width / 2;
+    const gridY = objectY + this.height / 2;
+
+    const minCol = Math.max(0, Math.floor((gridX - this.forceRadius) / this.gridSpacing));
+    const maxCol = Math.min(this.cols - 1, Math.ceil((gridX + this.forceRadius) / this.gridSpacing));
+    const minRow = Math.max(0, Math.floor((gridY - this.forceRadius) / this.gridSpacing));
+    const maxRow = Math.min(this.rows - 1, Math.ceil((gridY + this.forceRadius) / this.gridSpacing));
 
     // Apply force to nearby vertices
     for (let row = minRow; row <= maxRow; row++) {

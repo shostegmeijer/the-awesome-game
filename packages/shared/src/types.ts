@@ -62,6 +62,7 @@ export interface BulletUpdatePayload {
 export interface HealthUpdatePayload {
   userId: string;
   health: number;
+  attackerId?: string;
 }
 
 // Socket.io event map for type safety
@@ -156,6 +157,14 @@ export interface ServerToClientEvents {
   'weapon:explode': (data: WeaponExplodePayload) => void;
   'laser:spawn': (data: LaserSpawnPayload) => void;
   'player:respawn': (data: PlayerRespawnPayload) => void;
+  'player:killed': (data: PlayerKilledPayload) => void;
+}
+
+export interface PlayerKilledPayload {
+  victimId: string;
+  victimName: string;
+  attackerId: string;
+  attackerName: string;
 }
 
 export interface PlayerRespawnPayload {

@@ -12,6 +12,52 @@ interface ClientPowerUp extends PowerUpData {
 
 export class PowerUpSystem {
   private powerups: ClientPowerUp[] = [];
+  private powerupCanvases: Map<string, HTMLCanvasElement> = new Map();
+
+  constructor() {
+    this.prerenderPowerUps();
+  }
+
+  private prerenderPowerUps(): void {
+    Object.values(WEAPONS).forEach(weapon => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 100;
+      canvas.height = 100;
+      const ctx = canvas.getContext('2d')!;
+      const centerX = 50;
+      const centerY = 50;
+      const size = 30;
+
+      // Outer glow ring
+      ctx.shadowBlur = 20;
+      ctx.shadowColor = weapon.color;
+      ctx.strokeStyle = weapon.color;
+      ctx.lineWidth = 3;
+
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, size, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Inner bright circle
+      ctx.fillStyle = weapon.color;
+      ctx.shadowBlur = 15;
+      ctx.shadowColor = '#FFFFFF';
+
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, size * 0.7, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Icon/text
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 24px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(weapon.icon, centerX, centerY);
+
+      this.powerupCanvases.set(weapon.type, canvas);
+    });
+  }
 
   /**
    * Update power-up animations
@@ -73,50 +119,28 @@ export class PowerUpSystem {
   render(ctx: CanvasRenderingContext2D): void {
     this.powerups.forEach(powerup => {
       const weapon = WEAPONS[powerup.weaponType];
+      const canvas = this.powerupCanvases.get(powerup.weaponType);
 
-      // Pulsing scale
-      const scale = 1 + Math.sin(powerup.pulsePhase) * 0.2;
-      const size = 30 * scale;
+      if (canvas) {
+        // Pulsing scale
+        const scale = 1 + Math.sin(powerup.pulsePhase) * 0.2;
 
-      // Outer glow ring
-      ctx.save();
-      ctx.globalAlpha = 0.6;
-      ctx.shadowBlur = 20;
-      ctx.shadowColor = weapon.color;
-      ctx.strokeStyle = weapon.color;
-      ctx.lineWidth = 3;
+        ctx.save();
+        ctx.translate(powerup.x, powerup.y);
+        ctx.scale(scale, scale);
+        ctx.drawImage(canvas, -50, -50);
+        ctx.restore();
 
-      ctx.beginPath();
-      ctx.arc(powerup.x, powerup.y, size, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Inner bright circle
-      ctx.globalAlpha = 0.8;
-      ctx.fillStyle = weapon.color;
-      ctx.shadowBlur = 15;
-      ctx.shadowColor = '#FFFFFF';
-
-      ctx.beginPath();
-      ctx.arc(powerup.x, powerup.y, size * 0.7, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Icon/text
-      ctx.globalAlpha = 1;
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = '#000000';
-      ctx.font = 'bold 24px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(weapon.icon, powerup.x, powerup.y);
-
-      // Weapon name below
-      ctx.fillStyle = weapon.color;
-      ctx.font = 'bold 12px Arial';
-      ctx.shadowBlur = 5;
-      ctx.shadowColor = '#000000';
-      ctx.fillText(weapon.name, powerup.x, powerup.y + size + 15);
-
-      ctx.restore();
+        // Weapon name below (still dynamic text, but simpler)
+        ctx.save();
+        ctx.fillStyle = weapon.color;
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.shadowBlur = 5;
+        ctx.shadowColor = '#000000';
+        ctx.fillText(weapon.name, powerup.x, powerup.y + 30 * scale + 15);
+        ctx.restore();
+      }
     });
   }
 

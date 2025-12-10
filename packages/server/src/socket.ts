@@ -1,10 +1,13 @@
+
 import { Server, Socket } from 'socket.io';
 import {
   ServerToClientEvents,
   ClientToServerEvents,
-  CursorData
+  CursorData,
+  MAP_WIDTH,
+  MAP_HEIGHT
 } from '@awesome-game/shared';
-import { addUser, removeUser, updateCursor, getAllUsers, updateHealth } from './state.js';
+import { addUser, removeUser, updateCursor, getAllUsers, updateHealth, addKill, addDeath } from './state.js';
 import { MineSystem } from './mines.js';
 import { PowerUpSystem } from './powerups.js';
 import { BulletSystem } from './bullets.js';
@@ -18,8 +21,31 @@ type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
  */
 export function initializeSocketHandlers(io: TypedServer): void {
   // Centralized death handler
-  const handleDeath = (userId: string) => {
-    const RESPAWN_DELAY = 10000;
+  const handleDeath = (userId: string, attackerId?: string) => {
+    const user = getAllUsers().get(userId);
+    const attacker = attackerId ? getAllUsers().get(attackerId) : null;
+
+    if (user && attacker) {
+      // Track stats
+      addDeath(user.id);
+      if (user.id !== attacker.id) {
+        addKill(attacker.id);
+      }
+
+      // Broadcast kill event
+      io.emit('player:killed', {
+        victimId: user.id,
+        victimName: user.label,
+        attackerId: attacker.id,
+        attackerName: attacker.label
+      });
+      console.log(`[DEATH] ${user.label} killed by ${attacker.label} `);
+    } else if (user) {
+      addDeath(user.id);
+      console.log(`[DEATH] ${user.label} died`);
+    }
+
+    const RESPAWN_DELAY = 6000;
     const respawnTime = Date.now() + RESPAWN_DELAY;
 
     // Notify all users about respawn (so everyone knows)
@@ -35,8 +61,8 @@ export function initializeSocketHandlers(io: TypedServer): void {
       if (user) {
         // Reset user state
         user.health = 100;
-        user.x = Math.random() * 2000;
-        user.y = Math.random() * 2000;
+        user.x = (Math.random() - 0.5) * MAP_WIDTH;
+        user.y = (Math.random() - 0.5) * MAP_HEIGHT;
         user.weaponType = 'machineGun';
 
         // Notify all clients about respawn (health update + position update)
@@ -98,7 +124,7 @@ export function initializeSocketHandlers(io: TypedServer): void {
   }, 16); // 16ms = ~60 updates per second
 
   io.on('connection', (socket: TypedSocket) => {
-    console.log(`🔌 User connected: ${socket.id}`);
+    console.log(`🔌 User connected: ${socket.id} `);
 
     // Add user to state
     const user = addUser(socket.id);
@@ -134,17 +160,21 @@ export function initializeSocketHandlers(io: TypedServer): void {
     socket.on('cursor:move', ({ x, y, rotation }) => {
       // Validate coordinates
       if (typeof x !== 'number' || typeof y !== 'number') return;
-      if (x < 0 || y < 0 || x > 10000 || y > 10000) return;
 
-      // Update state
-      updateCursor(socket.id, x, y, rotation || 0);
+      // Clamp to map bounds (centered)
+      const halfW = MAP_WIDTH / 2;
+      const halfH = MAP_HEIGHT / 2;
+      const clampedX = Math.max(-halfW, Math.min(x, halfW));
+      const clampedY = Math.max(-halfH, Math.min(y, halfH));
 
-      // Broadcast to other clients (volatile = UDP-like, prioritize speed over reliability)
-      socket.volatile.broadcast.emit('cursor:update', {
+      updateCursor(socket.id, clampedX, clampedY, rotation);
+
+      // Broadcast new position to all other clients (optimized: only send x,y,rotation)
+      socket.broadcast.emit('cursor:update', {
         userId: socket.id,
-        x,
-        y,
-        rotation: rotation || 0
+        x: clampedX,
+        y: clampedY,
+        rotation
       });
     });
 
@@ -154,7 +184,7 @@ export function initializeSocketHandlers(io: TypedServer): void {
       if (!user || user.health <= 0) return;
 
       // Generate unique bullet ID
-      const bulletId = `${socket.id}-${Date.now()}-${Math.random()}`;
+      const bulletId = `${socket.id} -${Date.now()} -${Math.random()} `;
 
       // Add to server tracking
       bulletSystem.addBullet(bulletId, socket.id, x, y, angle);
@@ -187,7 +217,7 @@ export function initializeSocketHandlers(io: TypedServer): void {
     });
 
     // Handle health damage
-    socket.on('health:damage', ({ userId, health }) => {
+    socket.on('health:damage', ({ userId, health, attackerId }) => {
       const newHealth = updateHealth(userId, health);
       if (newHealth !== null) {
         // Broadcast health update to all clients
@@ -198,14 +228,14 @@ export function initializeSocketHandlers(io: TypedServer): void {
 
         // Check for death and schedule respawn
         if (newHealth <= 0) {
-          handleDeath(userId);
+          handleDeath(userId, attackerId);
         }
       }
     });
 
     // Handle disconnect
     socket.on('disconnect', () => {
-      console.log(`🔌 User disconnected: ${socket.id}`);
+      console.log(`🔌 User disconnected: ${socket.id} `);
       removeUser(socket.id);
       io.emit('user:left', { userId: socket.id });
     });
