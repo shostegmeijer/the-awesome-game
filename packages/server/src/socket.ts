@@ -255,6 +255,9 @@ export function initializeSocketHandlers(io: TypedServer): void {
     socket.on('cursor:move', ({ x, y, rotation }) => {
       // Validate coordinates
       if (typeof x !== 'number' || typeof y !== 'number') return;
+      // Ignore movement when dead
+      const me = getAllUsers().get(socket.id);
+      if (!me || me.health <= 0) return;
 
       // Clamp to map bounds (centered)
       const halfW = MAP_WIDTH / 2;

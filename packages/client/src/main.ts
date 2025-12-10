@@ -278,6 +278,29 @@ socket.on('player:killed', (data) => {
     // Someone else killed someone else
     announcements.show(`${data.attackerName} 🔫 ${data.victimName}`, '', '#FFFFFF', 2000);
   }
+
+  // Lightweight explosion effect at victim's last position (no markers)
+  const victimId = data.victimId as string;
+  let vx = 0;
+  let vy = 0;
+  let vcolor = '#FF3333';
+  if (victimId === socket.getSocketId()) {
+    vx = localCursor.x;
+    vy = localCursor.y;
+    vcolor = localCursor.color;
+  } else {
+    const vc = cursors.getCursors().get(victimId);
+    if (vc) {
+      vx = vc.x;
+      vy = vc.y;
+      vcolor = vc.color;
+    }
+  }
+  if (!Number.isNaN(vx) && !Number.isNaN(vy)) {
+    explosions.explode(vx, vy, vcolor, 3);
+    particles.explode(vx, vy, vcolor, 300);
+    screenShake.shake(12, 250);
+  }
 });
 
 // Handle bullet spawn from network

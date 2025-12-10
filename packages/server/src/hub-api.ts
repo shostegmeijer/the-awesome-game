@@ -47,7 +47,7 @@ export async function getCurrentGame(): Promise<CurrentGameResponse | null> {
     }
 
     const data = await response.json();
-    return data;
+    return data as any;
   } catch (error) {
     console.error('❌ Error fetching current game:', error);
     return null;
