@@ -186,7 +186,6 @@ export interface ServerToClientEvents {
   'bullet:spawn': (data: BulletUpdatePayload) => void;
   'health:update': (data: HealthUpdatePayload) => void;
   'kill': (data: KillPayload) => void;
-  'knockback': (data: KnockbackPayload) => void;
   'stats:update': (data: StatsUpdatePayload) => void;
 
   // New events
@@ -210,6 +209,7 @@ export interface ServerToClientEvents {
   'admin:addBot:ok': (data: { bot: { id: string; label: string } }) => void;
   'admin:removeBot:error': (data: AdminErrorPayload) => void;
   'admin:removeBot:ok': (data: { removed: string }) => void;
+  'admin:removeAllBots:ok': (data: { removed: boolean }) => void;
   'admin:kickPlayer:ok': (data: { kicked: string }) => void;
   'admin:kickPlayer:error': (data: AdminErrorPayload) => void;
   'admin:settings': (data: AdminSettingsPayload) => void;
@@ -218,6 +218,8 @@ export interface ServerToClientEvents {
   'player:respawn': (data: PlayerRespawnPayload) => void;
   'player:killed': (data: PlayerKilledPayload) => void;
   'player:info': (data: PlayerInfoPayload) => void;
+  'knockback': (data: KnockbackPayload) => void;
+  'score:update': (data: { scores: Array<PlayerScore> }) => void;
 }
 
 export interface PlayerKilledPayload {
@@ -262,6 +264,7 @@ export interface ClientToServerEvents {
   'admin:getBots': (data: { token: string }) => void;
   'admin:addBot': (data: { token: string }) => void;
   'admin:removeBot': (data: { token: string, id: string }) => void;
+  'admin:removeAllBots': (data: { token: string }) => void;
   'admin:kickPlayer': (data: { token: string, id: string }) => void;
   'admin:getSettings': (data: { token: string }) => void;
   'admin:updateSettings': (data: { token: string, settings: Partial<AdminSettingsPayload> }) => void;
@@ -272,7 +275,7 @@ export interface ClientToServerEvents {
 export interface AdminLoginOkPayload { token: string }
 export interface AdminErrorPayload { error: string, id?: string }
 export interface AdminPlayersPayload {
-  players: Array<{ id: string; label: string; x: number; y: number; health: number; points: number }>
+  players: Array<PlayerScore>
 }
 export interface AdminBotsPayload {
   bots: Array<{ id: string; label: string; x: number; y: number; health: number }>
@@ -291,3 +294,11 @@ export interface AdminEndGamePayload {
   total: number;
 }
 
+export interface PlayerScore {
+  playerId: string;
+  playerName: string;
+  score: number;
+  kills: number;
+  deaths: number;
+  botKills?: number;
+}

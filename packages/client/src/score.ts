@@ -2,13 +2,8 @@
  * Score tracking system
  */
 
-interface PlayerScore {
-  playerId: string;
-  playerName: string;
-  score: number;
-  kills: number;
-  deaths: number;
-}
+import type { PlayerScore } from '@awesome-game/shared';
+
 
 export class ScoreManager {
   private scores: Map<string, PlayerScore> = new Map();
@@ -144,7 +139,8 @@ export class ScoreManager {
 
     ctx.font = '12px Arial';
     ctx.fillStyle = '#AAAAAA';
-    ctx.fillText(`Kills: ${localPlayer.kills}  Deaths: ${localPlayer.deaths}`, padding + 15, padding + 105);
+    const botKillsText = typeof localPlayer.botKills === 'number' ? `  Bot Kills: ${localPlayer.botKills}` : '';
+    ctx.fillText(`Kills: ${localPlayer.kills}  Deaths: ${localPlayer.deaths}${botKillsText}`, padding + 15, padding + 105);
 
     // K/D ratio
     const kd = localPlayer.deaths > 0 ? (localPlayer.kills / localPlayer.deaths).toFixed(2) : localPlayer.kills.toFixed(2);
@@ -171,5 +167,24 @@ export class ScoreManager {
    */
   clear(): void {
     this.scores.clear();
+  }
+
+  /**
+   * Apply a server-authoritative snapshot of scores
+   */
+  applySnapshot(snapshot: Array<PlayerScore>): void {
+    // Replace existing map with incoming values
+    const next = new Map<string, PlayerScore>();
+    for (const s of snapshot as Array<PlayerScore>) {
+      next.set(s.playerId, {
+        playerId: s.playerId,
+        playerName: s.playerName,
+        score: s.score,
+        kills: s.kills,
+        deaths: s.deaths,
+        botKills: s.botKills,
+      });
+    }
+    this.scores = next;
   }
 }
