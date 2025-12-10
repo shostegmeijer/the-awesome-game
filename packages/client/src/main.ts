@@ -86,12 +86,6 @@ let lastShotTime = 0;
 // Collision settings
 const SHIP_COLLISION_RADIUS = 25; // Pixels
 
-// Initialize local player score
-const mySocketId = socket.getSocketId();
-if (mySocketId) {
-  scoreManager.initPlayer(mySocketId, 'You');
-}
-
 // Log hub integration status
 if (playerKey) {
   console.log('🎮 Hub integration enabled - scores will be auto-submitted on disconnect');
@@ -173,10 +167,11 @@ socket.on('player:info', (data) => {
   // Update local player label with fetched name from hub
   localCursor.label = data.label;
   localCursor.color = data.color;
-  // Update score manager with real name
-  if (mySocketId) {
-    scoreManager.initPlayer(mySocketId, data.label);
-  }
+
+  // Initialize score manager with player info (this happens after socket connects)
+  scoreManager.initPlayer(data.userId, data.label);
+  console.log('📊 Scoreboard initialized for', data.label);
+
   // Update welcome screen if still visible
   const playerNameDisplay = document.getElementById('player-name-display');
   if (playerNameDisplay && data.label !== 'You') {
@@ -787,7 +782,10 @@ canvas.startRenderLoop(() => {
   camera.reset(ctx);
 
   // Render UI elements (not affected by screen shake)
-  scoreManager.renderUI(ctx, socket.getSocketId() || 'local');
+  const currentSocketId = socket.getSocketId();
+  if (currentSocketId) {
+    scoreManager.renderUI(ctx, currentSocketId);
+  }
   announcements.render(ctx);
 
   // Display current weapon

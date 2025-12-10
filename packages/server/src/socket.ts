@@ -99,8 +99,11 @@ export function initializeSocketHandlers(io: TypedServer): void {
     // Check collisions
     const users = getAllUsers();
 
-    // Check powerup collection
+    // Check powerup collection and mine collisions (only for alive players)
     users.forEach(user => {
+      // Skip dead players
+      if (user.health <= 0) return;
+
       const collectedPowerUp = powerUpSystem.checkCollection(user.x, user.y, user.radius);
       if (collectedPowerUp) {
         powerUpSystem.collectPowerUp(collectedPowerUp.id, user.id);

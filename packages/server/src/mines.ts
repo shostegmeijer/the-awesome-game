@@ -186,11 +186,10 @@ export class MineSystem {
                 });
 
                 if (oldHealth > 0 && newHealth <= 0) {
-                    this.onDeath(user.id, triggeredByUserId);
-                }
-
-                if (triggeredByUserId && newHealth <= 0 && user.health > 0) {
-                    // Handle kill credit if needed
+                    // If you ran into your own mine or triggered it yourself = no kill credit (suicide/accident)
+                    // If someone else shot the mine that killed you = they get kill credit (tactical kill)
+                    const isOwnMine = triggeredByUserId === user.id;
+                    this.onDeath(user.id, isOwnMine ? undefined : triggeredByUserId);
                 }
             }
         });
