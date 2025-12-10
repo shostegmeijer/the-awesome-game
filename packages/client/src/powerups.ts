@@ -1,89 +1,70 @@
 /**
- * Power-up spawning and collection system
+ * Power-up system (Client-side rendering only)
  */
 
-import { WeaponType, WEAPONS } from './weapons.js';
+import { PowerUpData, WeaponType } from '@awesome-game/shared';
+import { WEAPONS } from './weapons.js';
 
-interface PowerUp {
-  id: string;
-  x: number;
-  y: number;
-  weaponType: WeaponType;
+interface ClientPowerUp extends PowerUpData {
   pulsePhase: number;
-  collisionRadius: number;
+  collisionRadius: number; // Keep for rendering size calculations
 }
 
 export class PowerUpSystem {
-  private powerups: PowerUp[] = [];
-  private nextId = 0;
-  private spawnInterval = 8000; // Spawn every 8 seconds
-  private lastSpawnTime = 0;
-  private maxPowerUps = 3;
+  private powerups: ClientPowerUp[] = [];
 
   /**
-   * Update power-ups and spawn new ones
+   * Update power-up animations
    */
-  update(currentTime: number): void {
+  update(_currentTime: number): void {
     // Update pulse animation
     this.powerups.forEach(powerup => {
       powerup.pulsePhase += 0.08;
     });
-
-    // Spawn new power-ups
-    if (currentTime - this.lastSpawnTime > this.spawnInterval && this.powerups.length < this.maxPowerUps) {
-      this.spawn();
-      this.lastSpawnTime = currentTime;
-    }
   }
 
   /**
-   * Spawn a random power-up at a random location
+   * Sync powerups from server
    */
-  spawn(): void {
-    const padding = 100;
-    const x = padding + Math.random() * (window.innerWidth - padding * 2);
-    const y = padding + Math.random() * (window.innerHeight - padding * 2);
+  syncPowerUps(serverPowerUps: PowerUpData[]): void {
+    const newPowerUps: ClientPowerUp[] = [];
 
-    // Random weapon type (exclude machine gun and sniper)
-    const weaponTypes = [
-      WeaponType.TRIPLE_SHOT,
-      WeaponType.SHOTGUN,
-      WeaponType.ROCKET,
-      WeaponType.LASER
-    ];
-    const weaponType = weaponTypes[Math.floor(Math.random() * weaponTypes.length)];
+    serverPowerUps.forEach(serverPowerUp => {
+      const existing = this.powerups.find(p => p.id === serverPowerUp.id);
+      if (existing) {
+        existing.x = serverPowerUp.x;
+        existing.y = serverPowerUp.y;
+        newPowerUps.push(existing);
+      } else {
+        newPowerUps.push({
+          ...serverPowerUp,
+          pulsePhase: Math.random() * Math.PI * 2,
+          collisionRadius: 30
+        });
+      }
+    });
 
+    this.powerups = newPowerUps;
+    console.log(`💎 Synced ${this.powerups.length} powerups`);
+  }
+
+  /**
+   * Add a single powerup from server
+   */
+  addPowerUp(powerUpData: PowerUpData): void {
     this.powerups.push({
-      id: `powerup-${this.nextId++}`,
-      x,
-      y,
-      weaponType,
+      ...powerUpData,
       pulsePhase: 0,
       collisionRadius: 30
     });
-
-    console.log(`💎 Power-up spawned: ${WEAPONS[weaponType].name}`);
+    console.log(`💎 Power-up spawned: ${WEAPONS[powerUpData.weaponType].name}`);
   }
 
   /**
-   * Check if player collects a power-up
+   * Remove a powerup (collected)
    */
-  checkCollection(playerX: number, playerY: number): WeaponType | null {
-    for (let i = 0; i < this.powerups.length; i++) {
-      const powerup = this.powerups[i];
-      const dx = playerX - powerup.x;
-      const dy = playerY - powerup.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-
-      if (distance < powerup.collisionRadius + 25) {
-        // Collected!
-        const weaponType = powerup.weaponType;
-        this.powerups.splice(i, 1);
-        console.log(`✨ Collected: ${WEAPONS[weaponType].name}`);
-        return weaponType;
-      }
-    }
-    return null;
+  removePowerUp(id: string): void {
+    this.powerups = this.powerups.filter(p => p.id !== id);
   }
 
   /**
@@ -137,13 +118,6 @@ export class PowerUpSystem {
 
       ctx.restore();
     });
-  }
-
-  /**
-   * Get all power-ups
-   */
-  getPowerUps(): PowerUp[] {
-    return this.powerups;
   }
 
   /**

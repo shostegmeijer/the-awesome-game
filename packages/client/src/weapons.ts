@@ -44,7 +44,7 @@ export const WEAPONS: Record<WeaponType, WeaponConfig> = {
     damage: 30,
     bulletSpeed: 14,
     bulletCount: 3,
-    spread: 0.3,
+    spread: 0.2,
     bulletLifetime: 120,
     icon: '⚡'
   },
@@ -53,10 +53,10 @@ export const WEAPONS: Record<WeaponType, WeaponConfig> = {
     name: 'Shotgun',
     color: '#FF6600',
     cooldown: 0, // One-time use
-    damage: 10,
+    damage: 20,
     bulletSpeed: 12,
     bulletCount: 20,
-    spread: 0.01,
+    spread: 0.02,
     bulletLifetime: 50,
     icon: '💥'
   },
@@ -65,7 +65,7 @@ export const WEAPONS: Record<WeaponType, WeaponConfig> = {
     name: 'Rocket',
     color: '#FF0000',
     cooldown: 0, // One-time use
-    damage: 60,
+    damage: 100,
     bulletSpeed: 6, // Slower
     bulletCount: 1,
     spread: 0,

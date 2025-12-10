@@ -60,6 +60,61 @@ export interface HealthUpdatePayload {
 }
 
 // Socket.io event map for type safety
+// Weapon Types
+export enum WeaponType {
+  MACHINE_GUN = 'machineGun',
+  TRIPLE_SHOT = 'tripleShot',
+  SHOTGUN = 'shotgun',
+  ROCKET = 'rocket',
+  LASER = 'laser'
+}
+
+// Mine Data
+export interface MineData {
+  id: string;
+  x: number;
+  y: number;
+  radius: number;
+}
+
+// PowerUp Data
+export interface PowerUpData {
+  id: string;
+  x: number;
+  y: number;
+  weaponType: WeaponType;
+}
+
+// Event Payloads
+export interface MineExplodePayload {
+  mineId: string;
+  x: number;
+  y: number;
+  triggeredBy?: string;
+}
+
+export interface PowerUpCollectPayload {
+  powerUpId: string;
+  userId: string;
+  weaponType: WeaponType;
+}
+
+export interface WeaponExplodePayload {
+  x: number;
+  y: number;
+  weaponType: WeaponType;
+  triggeredBy: string;
+}
+
+export interface MinesSyncPayload {
+  mines: MineData[];
+}
+
+export interface PowerUpsSyncPayload {
+  powerups: PowerUpData[];
+}
+
+// Socket.io event map for type safety
 export interface ServerToClientEvents {
   'user:joined': (data: UserJoinedPayload) => void;
   'user:left': (data: UserLeftPayload) => void;
@@ -67,10 +122,24 @@ export interface ServerToClientEvents {
   'cursor:update': (data: CursorUpdatePayload) => void;
   'bullet:spawn': (data: BulletUpdatePayload) => void;
   'health:update': (data: HealthUpdatePayload) => void;
+
+  // New events
+  'mine:spawn': (data: MineData) => void;
+  'mine:explode': (data: MineExplodePayload) => void;
+  'mine:sync': (data: MinesSyncPayload) => void;
+
+  'powerup:spawn': (data: PowerUpData) => void;
+  'powerup:collect': (data: PowerUpCollectPayload) => void;
+  'powerup:sync': (data: PowerUpsSyncPayload) => void;
+
+  'weapon:explode': (data: WeaponExplodePayload) => void;
 }
 
 export interface ClientToServerEvents {
   'cursor:move': (data: CursorMovePayload) => void;
   'bullet:shoot': (data: BulletShootPayload) => void;
   'health:damage': (data: HealthUpdatePayload) => void;
+
+  // New events - mostly for verification/client-initiated actions if needed
+  // But primarily server drives these now
 }

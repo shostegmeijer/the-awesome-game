@@ -1,10 +1,13 @@
 import { Server, Socket } from 'socket.io';
-import type {
+import {
   ServerToClientEvents,
   ClientToServerEvents,
-  CursorData
+  CursorData,
+  WeaponType
 } from '@awesome-game/shared';
 import { addUser, removeUser, updateCursor, getAllUsers, updateHealth } from './state.js';
+import { MineSystem } from './mines.js';
+import { PowerUpSystem } from './powerups.js';
 
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents>;
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
@@ -13,6 +16,35 @@ type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
  * Initialize Socket.io event handlers
  */
 export function initializeSocketHandlers(io: TypedServer): void {
+  // Initialize game systems
+  const mineSystem = new MineSystem(io);
+  const powerUpSystem = new PowerUpSystem(io);
+
+  // Start server-side game loop (20 TPS)
+  setInterval(() => {
+    mineSystem.update();
+    powerUpSystem.update();
+
+    // Check collisions
+    const users = getAllUsers();
+
+    // Check powerup collection
+    users.forEach(user => {
+      const collectedPowerUp = powerUpSystem.checkCollection(user.x, user.y, user.radius);
+      if (collectedPowerUp) {
+        powerUpSystem.collectPowerUp(collectedPowerUp.id, user.id);
+        // Update user weapon state if we were tracking it strictly
+      }
+
+      // Check mine collision with player
+      const hitMineId = mineSystem.checkPlayerCollision(user.x, user.y, user.radius);
+      if (hitMineId) {
+        mineSystem.explodeMine(hitMineId, user.id);
+      }
+    });
+
+  }, 50); // 50ms = 20 updates per second
+
   io.on('connection', (socket: TypedSocket) => {
     console.log(`🔌 User connected: ${socket.id}`);
 
@@ -40,6 +72,10 @@ export function initializeSocketHandlers(io: TypedServer): void {
       }
     });
     socket.emit('cursors:sync', { cursors });
+
+    // Sync game state
+    socket.emit('mine:sync', { mines: mineSystem.getMines() });
+    socket.emit('powerup:sync', { powerups: powerUpSystem.getPowerUps() });
 
     // Handle cursor movement (volatile for performance)
     socket.on('cursor:move', ({ x, y }) => {
@@ -81,6 +117,10 @@ export function initializeSocketHandlers(io: TypedServer): void {
         vy,
         color: user.color
       });
+
+      // Check immediate collision with mines (simplified)
+      // In a real physics engine we'd step the bullet, but here we can just check proximity if we wanted
+      // For now, let's trust the client for bullet-mine collision or implement a bullet manager server-side later
     });
 
     // Handle health damage

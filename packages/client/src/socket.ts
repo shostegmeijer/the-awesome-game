@@ -107,8 +107,18 @@ export class SocketManager {
   /**
    * Listen for health update events
    */
+  /**
+   * Listen for health update events
+   */
   onHealthUpdate(callback: (data: HealthUpdatePayload) => void): void {
     this.socket.on('health:update', callback);
+  }
+
+  /**
+   * Generic event listener
+   */
+  on<Ev extends keyof ServerToClientEvents>(event: Ev, callback: ServerToClientEvents[Ev]): void {
+    this.socket.on(event, callback);
   }
 
   /**

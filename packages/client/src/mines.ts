@@ -1,148 +1,76 @@
 /**
- * Mine system - explosive hazards that can be triggered by players or bullets
+ * Mine system - explosive hazards (Client-side rendering only)
  */
 
-interface Mine {
-  id: string;
-  x: number;
-  y: number;
-  radius: number;
-  damageRadius: number;
-  damage: number;
+import { MineData } from '@awesome-game/shared';
+
+interface ClientMine extends MineData {
   pulsePhase: number;
   blinkPhase: number;
 }
 
 export class MineSystem {
-  private mines: Mine[] = [];
-  private nextId = 0;
-  private spawnInterval = 10000; // Spawn every 10 seconds
-  private lastSpawnTime = 0;
-  private maxMines = 5;
-  private mineRadius = 20;
-  private damageRadius = 120;
-  private mineDamage = 40;
+  private mines: ClientMine[] = [];
+
+  // Visual properties
+  private damageRadius = 120; // For visualization only
 
   /**
-   * Update mines and spawn new ones
+   * Update mine animations
    */
-  update(currentTime: number): void {
+  update(_currentTime: number): void {
     // Update animations
     this.mines.forEach(mine => {
       mine.pulsePhase += 0.08;
       mine.blinkPhase += 0.15;
     });
-
-    // Spawn new mines
-    if (currentTime - this.lastSpawnTime > this.spawnInterval && this.mines.length < this.maxMines) {
-      this.spawn();
-      this.lastSpawnTime = currentTime;
-    }
   }
 
   /**
-   * Spawn a mine at random location
+   * Sync mines from server
    */
-  spawn(): void {
-    const padding = 100;
-    const x = padding + Math.random() * (window.innerWidth - padding * 2);
-    const y = padding + Math.random() * (window.innerHeight - padding * 2);
+  syncMines(serverMines: MineData[]): void {
+    // Replace current mines but try to preserve animation phases if possible
+    const newMines: ClientMine[] = [];
 
+    serverMines.forEach(serverMine => {
+      const existing = this.mines.find(m => m.id === serverMine.id);
+      if (existing) {
+        // Update position if needed, keep phases
+        existing.x = serverMine.x;
+        existing.y = serverMine.y;
+        newMines.push(existing);
+      } else {
+        // New mine
+        newMines.push({
+          ...serverMine,
+          pulsePhase: Math.random() * Math.PI * 2,
+          blinkPhase: Math.random() * Math.PI * 2
+        });
+      }
+    });
+
+    this.mines = newMines;
+    console.log(`💣 Synced ${this.mines.length} mines`);
+  }
+
+  /**
+   * Add a single mine from server
+   */
+  addMine(mineData: MineData): void {
     this.mines.push({
-      id: `mine-${this.nextId++}`,
-      x,
-      y,
-      radius: this.mineRadius,
-      damageRadius: this.damageRadius,
-      damage: this.mineDamage,
+      ...mineData,
       pulsePhase: 0,
       blinkPhase: 0
     });
-
     console.log('💣 Mine spawned!');
   }
 
   /**
-   * Check if bullet hits a mine
-   * Returns the mine that was hit, or null
+   * Remove a mine (exploded)
    */
-  checkBulletCollision(bulletX: number, bulletY: number): Mine | null {
-    for (let i = 0; i < this.mines.length; i++) {
-      const mine = this.mines[i];
-      const dx = bulletX - mine.x;
-      const dy = bulletY - mine.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-
-      if (distance < mine.radius) {
-        // Hit! Remove mine and return it
-        const hitMine = this.mines[i];
-        this.mines.splice(i, 1);
-        return hitMine;
-      }
-    }
-    return null;
-  }
-
-  /**
-   * Check if player collides with a mine
-   * Returns the mine that was hit, or null
-   */
-  checkPlayerCollision(playerX: number, playerY: number, playerRadius: number): Mine | null {
-    for (let i = 0; i < this.mines.length; i++) {
-      const mine = this.mines[i];
-      const dx = playerX - mine.x;
-      const dy = playerY - mine.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-
-      if (distance < mine.radius + playerRadius) {
-        // Hit! Remove mine and return it
-        const hitMine = this.mines[i];
-        this.mines.splice(i, 1);
-        return hitMine;
-      }
-    }
-    return null;
-  }
-
-  /**
-   * Get all players/entities within explosion radius
-   */
-  getExplosionTargets(mineX: number, mineY: number, radius: number, targets: Array<{ x: number; y: number; id: string }>): string[] {
-    const hitTargets: string[] = [];
-
-    targets.forEach(target => {
-      const dx = target.x - mineX;
-      const dy = target.y - mineY;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-
-      if (distance < radius) {
-        hitTargets.push(target.id);
-      }
-    });
-
-    return hitTargets;
-  }
-
-  /**
-   * Check if explosion hits other mines (for chain reactions)
-   * Returns array of mines that were hit
-   */
-  checkExplosionHitsMines(explosionX: number, explosionY: number, explosionRadius: number): Mine[] {
-    const hitMines: Mine[] = [];
-
-    for (let i = this.mines.length - 1; i >= 0; i--) {
-      const mine = this.mines[i];
-      const dx = mine.x - explosionX;
-      const dy = mine.y - explosionY;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-
-      if (distance < explosionRadius) {
-        hitMines.push(mine);
-        this.mines.splice(i, 1); // Remove the mine
-      }
-    }
-
-    return hitMines;
+  removeMine(id: string): void {
+    this.mines = this.mines.filter(m => m.id !== id);
   }
 
   /**
@@ -192,17 +120,10 @@ export class MineSystem {
   }
 
   /**
-   * Get all mines
+   * Get all mines (for reference if needed)
    */
-  getMines(): Mine[] {
+  getMines(): ClientMine[] {
     return this.mines;
-  }
-
-  /**
-   * Remove a specific mine by ID
-   */
-  removeMine(id: string): void {
-    this.mines = this.mines.filter(m => m.id !== id);
   }
 
   /**

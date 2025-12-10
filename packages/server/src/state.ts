@@ -8,6 +8,8 @@ export interface UserState {
   y: number;
   health: number;
   lastUpdate: number;
+  weaponType: string; // Track current weapon
+  radius: number; // Collision radius
 }
 
 const users = new Map<string, UserState>();
@@ -25,7 +27,9 @@ export function addUser(id: string): UserState {
     x: 0,
     y: 0,
     health: 100,
-    lastUpdate: Date.now()
+    lastUpdate: Date.now(),
+    weaponType: 'machineGun',
+    radius: 25 // Standard ship radius
   };
   users.set(id, user);
   console.log(`✅ User added: ${label} (${id}) - ${color}`);

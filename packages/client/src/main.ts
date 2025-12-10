@@ -66,48 +66,8 @@ if (mySocketId) {
   scoreManager.initPlayer(mySocketId, 'You');
 }
 
-// Helper function to trigger mine explosion with chain reactions
-function triggerMineExplosion(mine: any, depth: number = 0): void {
-  if (depth > 10) return; // Prevent infinite recursion
-
-  // Visual effects
-  explosions.explode(mine.x, mine.y, '#FF6600', 3);
-  particles.explode(mine.x, mine.y, '#FF6600', 400);
-  screenShake.shake(15 + depth * 3, 300);
-
-  // Apply shockwave to grid
-  for (let angle = 0; angle < Math.PI * 2; angle += 0.2) {
-    const forceX = Math.cos(angle) * 50;
-    const forceY = Math.sin(angle) * 50;
-    grid.applyForce(mine.x, mine.y, forceX, forceY);
-  }
-
-  // Check if explosion damages players
-  const targets = [
-    { x: localCursor.x, y: localCursor.y, id: socket.getSocketId() || 'local' }
-  ];
-  cursors.getCursors().forEach((cursor, id) => {
-    targets.push({ x: cursor.x, y: cursor.y, id });
-  });
-
-  const hitPlayers = mines.getExplosionTargets(mine.x, mine.y, mine.damageRadius, targets);
-  hitPlayers.forEach(playerId => {
-    if (playerId === socket.getSocketId() || playerId === 'local') {
-      localCursor.health = Math.max(0, localCursor.health - mine.damage);
-      console.log(`💣 Hit by mine explosion! Health: ${localCursor.health}`);
-    } else {
-      cursors.damageCursor(playerId, mine.damage);
-    }
-  });
-
-  // Check for chain reactions!
-  const chainMines = mines.checkExplosionHitsMines(mine.x, mine.y, mine.damageRadius);
-  chainMines.forEach(chainMine => {
-    setTimeout(() => {
-      triggerMineExplosion(chainMine, depth + 1);
-    }, 100); // Small delay for cascading effect
-  });
-}
+// Helper function to trigger mine explosion with chain reactions - REMOVED (Server handles this)
+// function triggerMineExplosion(mine: any, depth: number = 0): void { ... }
 
 // Test bot configuration
 const TEST_BOT_ENABLED = true; // Set to false to disable
@@ -157,7 +117,7 @@ controls.onAction('shoot', () => {
   const isRocket = weapon.type === WeaponType.ROCKET;
 
   // Spawn bullets locally and send to server
-  bulletData.forEach(({ angle, speed }) => {
+  bulletData.forEach(({ angle }) => {
     bullets.shoot(localCursor.x, localCursor.y, angle, socket.getSocketId() || 'local', weapon.color, isRocket);
     socket.emitBulletShoot(localCursor.x, localCursor.y, angle);
   });
@@ -214,6 +174,60 @@ socket.onHealthUpdate((data) => {
   } else {
     cursors.updateCursor(data.userId, 0, 0); // This will update health internally
   }
+});
+
+// Handle mine events
+socket.on('mine:spawn', (data) => {
+  mines.addMine(data);
+});
+
+socket.on('mine:sync', (data) => {
+  mines.syncMines(data.mines);
+});
+
+socket.on('mine:explode', (data) => {
+  mines.removeMine(data.mineId);
+
+  // Visual effects
+  explosions.explode(data.x, data.y, '#FF6600', 3);
+  particles.explode(data.x, data.y, '#FF6600', 400);
+  screenShake.shake(15, 300);
+
+  // Apply shockwave to grid
+  for (let angle = 0; angle < Math.PI * 2; angle += 0.2) {
+    const forceX = Math.cos(angle) * 50;
+    const forceY = Math.sin(angle) * 50;
+    grid.applyForce(data.x, data.y, forceX, forceY);
+  }
+
+  // Announce if we triggered it
+  if (data.triggeredBy === socket.getSocketId() || data.triggeredBy === 'local') {
+    announcements.announceMineExplosion('You', 0);
+  }
+});
+
+// Handle powerup events
+socket.on('powerup:spawn', (data) => {
+  powerUps.addPowerUp(data);
+});
+
+socket.on('powerup:sync', (data) => {
+  powerUps.syncPowerUps(data.powerups);
+});
+
+socket.on('powerup:collect', (data) => {
+  powerUps.removePowerUp(data.powerUpId);
+
+  const weapon = WEAPONS[data.weaponType];
+
+  // If we collected it
+  if (data.userId === socket.getSocketId() || data.userId === 'local') {
+    weaponManager.setWeapon(data.weaponType); // One-time use
+    announcements.announcePowerUp(weapon.name, weapon.icon);
+    scoreManager.addPoints(socket.getSocketId() || 'local', 50);
+  }
+
+  console.log(`✨ Collected: ${weapon.name} by ${data.userId}`);
 });
 
 // Get grid for applying forces
@@ -293,7 +307,9 @@ canvas.startRenderLoop(() => {
   // Update laser system
   lasers.update();
 
-  // Check power-up collection
+  // Check power-up collection - NOW HANDLED BY SERVER
+  // We just render what the server tells us
+  /*
   const collectedWeapon = powerUps.checkCollection(localCursor.x, localCursor.y);
   if (collectedWeapon) {
     weaponManager.setWeapon(collectedWeapon); // One-time use
@@ -301,6 +317,7 @@ canvas.startRenderLoop(() => {
     announcements.announcePowerUp(weapon.name, weapon.icon);
     scoreManager.addPoints(socket.getSocketId() || 'local', 50);
   }
+  */
 
   // Spawn particles from rockets
   bullets.getBullets().forEach(bullet => {
@@ -349,20 +366,24 @@ canvas.startRenderLoop(() => {
     }
   });
 
-  // Check mine collisions with bullets
+  // Check mine collisions with bullets - NOW HANDLED BY SERVER
+  /*
   bullets.getBullets().forEach(bullet => {
     const hitMine = mines.checkBulletCollision(bullet.x, bullet.y);
     if (hitMine) {
       triggerMineExplosion(hitMine);
     }
   });
+  */
 
-  // Check mine collisions with local player
+  // Check mine collisions with local player - NOW HANDLED BY SERVER
+  /*
   const hitMine = mines.checkPlayerCollision(localCursor.x, localCursor.y, SHIP_COLLISION_RADIUS);
   if (hitMine && localCursor.health > 0) {
     announcements.announceMineExplosion('You', 0);
     triggerMineExplosion(hitMine);
   }
+  */
 
   // Check laser collisions - local player
   const mySocketId = socket.getSocketId();
