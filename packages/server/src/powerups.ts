@@ -1,13 +1,12 @@
-import { Server } from 'socket.io';
 import {
     ClientToServerEvents,
-    ServerToClientEvents,
-    PowerUpData,
-    PowerUpCollectPayload,
-    WeaponType,
+    MAP_HEIGHT,
     MAP_WIDTH,
-    MAP_HEIGHT
+    PowerUpData,
+    ServerToClientEvents,
+    WeaponType
 } from '@awesome-game/shared';
+import { Server } from 'socket.io';
 
 interface PowerUp extends PowerUpData {
     collisionRadius: number;
@@ -42,7 +41,6 @@ export class PowerUpSystem {
      * Spawn a random powerup
      */
     spawn(): void {
-        const padding = 100;
         // Using window fallback for now, ideally should use map config
         const x = (Math.random() - 0.5) * MAP_WIDTH;
         const y = (Math.random() - 0.5) * MAP_HEIGHT;

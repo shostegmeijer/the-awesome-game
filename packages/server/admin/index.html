@@ -107,6 +107,7 @@
         <h2>Bots</h2>
         <div class="row">
           <button id="addBot">Add Bot</button>
+          <button id="removeAllBots">Remove All Bots</button>
           <button id="refreshBots">Refresh</button>
         </div>
       </div>
@@ -244,6 +245,9 @@
         if (tgt && tgt.classList.contains('kickPlayer')) {
           kickPlayer(tgt.getAttribute('data-id'));
         }
+      });
+      document.getElementById('removeAllBots').addEventListener('click', () => {
+        adminSocket.emit('admin:removeAllBots', { token: getToken() });
       });
       document.getElementById('botsBody').addEventListener('click', (e) => {
         const tgt = e.target;

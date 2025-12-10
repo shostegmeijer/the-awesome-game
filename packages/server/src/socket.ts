@@ -14,7 +14,7 @@ import { ADMIN_PASSWORD } from './index.js';
 import { LaserSystem } from './lasers.js';
 import { MineSystem } from './mines.js';
 import { PowerUpSystem } from './powerups.js';
-import { addBot, addDeath, addKill, addUser, getAllBots, getAllUsers, getSettings, getUserRank, markScoreSubmitted, removeBot, removeUser, setBotHealth, updateCursor, updateHealth, updateSettings, applyKnockback, updatePhysics } from './state.js';
+import { addBot, addDeath, addKill, addUser, getAllBots, getAllUsers, getSettings, getUserRank, markScoreSubmitted, removeBot, removeUser, setBotHealth, updateCursor, updateHealth, updatePhysics, updateSettings } from './state.js';
 
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents>;
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
@@ -33,6 +33,9 @@ export function initializeSocketHandlers(io: TypedServer): void {
       addDeath(user.id);
       if (user.id !== attacker.id) {
         addKill(attacker.id);
+        // Award/penalize points for player kill
+        attacker.points = (attacker.points || 0) + 100;
+        user.points = Math.max(0, (user.points || 0) - 50);
       }
 
       // Broadcast kill event
@@ -57,6 +60,15 @@ export function initializeSocketHandlers(io: TypedServer): void {
         });
       }
 
+      // Emit updated scoreboard snapshot
+      io.emit('score:update', { scores: Array.from(getAllUsers().values()).map(u => ({
+        playerId: u.id,
+        playerName: u.label,
+        score: u.points ?? 0,
+        kills: u.kills ?? 0,
+        deaths: u.deaths ?? 0,
+        botKills: (u as any).botKills ?? 0,
+      })) });
       console.log(`[DEATH] ${user.label} killed by ${attacker.label} `);
     } else if (user) {
       addDeath(user.id);
@@ -67,6 +79,14 @@ export function initializeSocketHandlers(io: TypedServer): void {
         deaths: user.deaths
       });
       console.log(`[DEATH] ${user.label} died`);
+      io.emit('score:update', { scores: Array.from(getAllUsers().values()).map(u => ({
+        playerId: u.id,
+        playerName: u.label,
+        score: u.points ?? 0,
+        kills: u.kills ?? 0,
+        deaths: u.deaths ?? 0,
+        botKills: (u as any).botKills ?? 0,
+      })) });
     }
 
     const RESPAWN_DELAY = 6000;
@@ -135,7 +155,11 @@ export function initializeSocketHandlers(io: TypedServer): void {
           userId,
           x: user.x,
           y: user.y,
-          rotation: user.rotation
+          rotation: user.rotation,
+          color: user.color,
+          label: user.label,
+          health: user.health,
+          type: 'player',
         });
       }
     });
@@ -288,6 +312,7 @@ export function initializeSocketHandlers(io: TypedServer): void {
       cursors[bot.id] = {
         x: bot.x,
         y: bot.y,
+        rotation: 0,
         color: '#FF00FF',
         label: bot.label,
         health: bot.health,
@@ -441,7 +466,12 @@ export function initializeSocketHandlers(io: TypedServer): void {
         x: u.x,
         y: u.y,
         health: u.health,
-        points: u.points
+        points: u.points,
+        playerId: u.playerKey!,
+        playerName: u.label,
+        score: u.points,
+        kills: u.kills,
+        deaths: u.deaths,
       }));
       socket.emit('admin:players', { players });
     });
@@ -459,6 +489,18 @@ export function initializeSocketHandlers(io: TypedServer): void {
       updateSettings({ botCount: s.botCount + 1 });
       socket.emit('admin:bots', { bots: getAllBots() });
       socket.emit('admin:addBot:ok', { bot });
+    });
+
+    // Admin: remove all bots
+    socket.on('admin:removeAllBots', ({ token }: { token: string }) => {
+      if (!isAuthorized(token)) return socket.emit('admin:error', { error: 'Unauthorized' });
+      const bots = getAllBots();
+      for (const b of bots) {
+        removeBot(b.id);
+      }
+      updateSettings({ botCount: 0 });
+      io.emit('admin:bots', { bots: getAllBots() });
+      socket.emit('admin:removeAllBots:ok', { removed: true });
     });
 
     socket.on('admin:removeBot', ({ token, id }: { token: string, id: string }) => {
@@ -529,6 +571,11 @@ export function initializeSocketHandlers(io: TypedServer): void {
       y: u.y,
       health: u.health,
       points: u.points,
+      playerId: u.playerKey!,
+      playerName: u.label,
+      score: u.points,
+      kills: u.kills,
+      deaths: u.deaths,
     }));
     io.emit('admin:players', { players });
   }, 500);

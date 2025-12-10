@@ -1,4 +1,4 @@
-import { MAP_HEIGHT, MAP_WIDTH } from '@awesome-game/shared';
+import { MAP_HEIGHT, MAP_WIDTH, type CursorData } from '@awesome-game/shared';
 import { AnnouncementSystem } from './announcements.js';
 import { BulletSystem } from './bullets.js';
 import { Camera } from './camera.js';
@@ -25,7 +25,7 @@ const playerKey = urlParams.get('playerKey') || undefined;
 // Setup welcome overlay
 const welcomeOverlay = document.getElementById('welcome-overlay');
 const playerKeyDisplay = document.getElementById('player-key-display');
-const startGameBtn = document.getElementById('start-game-btn');
+const startGameBtn = document.getElementById('start-game-btn') as HTMLButtonElement;
 const noKeyWarning = document.getElementById('no-key-warning');
 
 // Display player key or warning
@@ -99,9 +99,6 @@ const friction = 0.92; // Gradual slowdown
 
 // Shooting rate limiting
 let lastShotTime = 0;
-
-// Collision settings
-const SHIP_COLLISION_RADIUS = 25; // Pixels
 
 // Log hub integration status
 if (playerKey) {
@@ -218,7 +215,7 @@ socket.onUserLeft((data) => {
 socket.onCursorsSync((data) => {
   const mySocketId = socket.getSocketId();
   // Filter out our own cursor before syncing
-  const filteredCursors: Record<string, { x: number; y: number; color: string; label: string }> = {};
+  const filteredCursors: Record<string, CursorData> = {};
   Object.entries(data.cursors).forEach(([userId, cursor]) => {
     if (userId !== mySocketId) {
       filteredCursors[userId] = cursor;
@@ -278,29 +275,6 @@ socket.on('player:killed', (data) => {
   } else {
     // Someone else killed someone else
     announcements.show(`${data.attackerName} 🔫 ${data.victimName}`, '', '#FFFFFF', 2000);
-  }
-
-  // Lightweight explosion effect at victim's last position (no markers)
-  const victimId = data.victimId as string;
-  let vx = 0;
-  let vy = 0;
-  let vcolor = '#FF3333';
-  if (victimId === socket.getSocketId()) {
-    vx = localCursor.x;
-    vy = localCursor.y;
-    vcolor = localCursor.color;
-  } else {
-    const vc = cursors.getCursors().get(victimId);
-    if (vc) {
-      vx = vc.x;
-      vy = vc.y;
-      vcolor = vc.color;
-    }
-  }
-  if (!Number.isNaN(vx) && !Number.isNaN(vy)) {
-    explosions.explode(vx, vy, vcolor, 3);
-    particles.explode(vx, vy, vcolor, 300);
-    screenShake.shake(12, 250);
   }
 });
 
@@ -721,168 +695,6 @@ canvas.startRenderLoop(() => {
     }
   });
 
-  // Check mine collisions with bullets - NOW HANDLED BY SERVER
-  /*
-  bullets.getBullets().forEach(bullet => {
-    const hitMine = mines.checkBulletCollision(bullet.x, bullet.y);
-    if (hitMine) {
-      triggerMineExplosion(hitMine);
-    }
-  });
-  */
-
-  // Check mine collisions with local player - NOW HANDLED BY SERVER
-  /*
-  const hitMine = mines.checkPlayerCollision(localCursor.x, localCursor.y, SHIP_COLLISION_RADIUS);
-  if (hitMine && localCursor.health > 0) {
-    announcements.announceMineExplosion('You', 0);
-    triggerMineExplosion(hitMine);
-  }
-  */
-
-  // ===== SERVER NOW HANDLES ALL COLLISION DETECTION =====
-  // Client-side collision detection removed - server is authoritative
-  // All damage and health updates come from server via socket events
-
-  const mySocketId = socket.getSocketId();
-
-  /* DISABLED - Server handles collisions now
-  // Check laser collisions - local player
-  const laserAttackerId = mySocketId ? lasers.checkCollision(localCursor.x, localCursor.y, SHIP_COLLISION_RADIUS, mySocketId) : null;
-
-  if (laserAttackerId) {
-    localCursor.health = Math.max(0, localCursor.health - WEAPONS[WeaponType.LASER].damage);
-    console.log(`🔥 Hit by laser! Health: ${localCursor.health}`);
-
-    // Send health update to server
-    socket.emitHealthDamage(localCursor.health, laserAttackerId);
-
-    if (localCursor.health > 0) {
-      particles.spawn(localCursor.x, localCursor.y, Math.random() * Math.PI * 2, '#00FF00', 5);
-    }
-  }
-
-  // Check collisions - local player (use socket ID to avoid hitting yourself)
-  // Check collisions - local player (use socket ID to avoid hitting yourself)
-  const hitBullet = mySocketId ? bullets.checkCollision(localCursor.x, localCursor.y, SHIP_COLLISION_RADIUS, mySocketId) : null;
-
-  if (hitBullet) {
-    const oldHealth = localCursor.health;
-    // Determine damage based on bullet type (rocket vs normal)
-    const damage = hitBullet.isRocket ? WEAPONS[WeaponType.ROCKET].damage : WEAPONS[WeaponType.MACHINE_GUN].damage;
-
-    localCursor.health = Math.max(0, localCursor.health - damage);
-    console.log(`💥 You were hit! Health: ${localCursor.health}`);
-
-    // Send health update to server
-    socket.emitHealthDamage(localCursor.health, hitBullet.ownerId);
-
-    // Hit particles (not death)
-    if (localCursor.health > 0) {
-      particles.explode(localCursor.x, localCursor.y, localCursor.color, 100);
-      screenShake.shake(5, 100);
-    }
-
-    // Death explosion!
-    if (oldHealth > 0 && localCursor.health <= 0) {
-      console.log('💀 You died!');
-      explosions.explode(localCursor.x, localCursor.y, localCursor.color, 4);
-      particles.explode(localCursor.x, localCursor.y, localCursor.color, 1000);
-      screenShake.shake(25, 500);
-
-      // Death penalty
-      scoreManager.addPoints(mySocketId!, -50);
-
-      // MASSIVE grid explosion shockwave
-      const explosionForce = 100;
-      const rings = 5;
-      for (let ring = 0; ring < rings; ring++) {
-        const ringRadius = ring * 30;
-        for (let angle = 0; angle < Math.PI * 2; angle += 0.1) {
-          const forceX = Math.cos(angle) * explosionForce;
-          const forceY = Math.sin(angle) * explosionForce;
-          const x = localCursor.x + Math.cos(angle) * ringRadius;
-          const y = localCursor.y + Math.sin(angle) * ringRadius;
-          grid.applyForce(x, y, forceX, forceY);
-        }
-      }
-
-      // Respawn handled by server
-      console.log('⏳ Waiting for server respawn...');
-    }
-  }
-  */ // End of disabled client-side collision code
-
-  /* DISABLED - Server handles remote player collisions too
-  // Check laser collisions - remote players
-  cursors.getCursors().forEach((cursor, userId) => {
-    if (lasers.checkCollision(cursor.x, cursor.y, SHIP_COLLISION_RADIUS, userId)) {
-      const isDead = cursors.damageCursor(userId, WEAPONS[WeaponType.LASER].damage);
-      if (!isDead && cursor.health > 0) {
-        particles.spawn(cursor.x, cursor.y, Math.random() * Math.PI * 2, '#00FF00', 5);
-      }
-    }
-  });
-
-  // Check collisions - remote players
-  cursors.getCursors().forEach((cursor, userId) => {
-    if (bullets.checkCollision(cursor.x, cursor.y, SHIP_COLLISION_RADIUS, userId)) {
-      const oldHealth = cursor.health;
-      const weapon = weaponManager.getCurrentWeapon();
-      const isDead = cursors.damageCursor(userId, weapon.damage);
-
-      // Hit particles (not death)
-      if (!isDead && cursor.health > 0) {
-        particles.explode(cursor.x, cursor.y, cursor.color, 100);
-        screenShake.shake(5, 100);
-      }
-
-      // Death explosion for remote players!
-      if (isDead && oldHealth > 0) {
-        console.log(`💀 ${cursor.label} died!`);
-        explosions.explode(cursor.x, cursor.y, cursor.color, 4);
-        particles.explode(cursor.x, cursor.y, cursor.color, 1000);
-        screenShake.shake(25, 500);
-
-        // Award kill points
-        if (mySocketId) {
-          scoreManager.addKill(mySocketId, userId);
-          announcements.announceKill('You', cursor.label, 100);
-        }
-
-        // MASSIVE grid explosion shockwave
-        const explosionForce = 100;
-        const rings = 5;
-        for (let ring = 0; ring < rings; ring++) {
-          const ringRadius = ring * 30;
-          for (let angle = 0; angle < Math.PI * 2; angle += 0.1) {
-            const forceX = Math.cos(angle) * explosionForce;
-            const forceY = Math.sin(angle) * explosionForce;
-            const x = cursor.x + Math.cos(angle) * ringRadius;
-            const y = cursor.y + Math.sin(angle) * ringRadius;
-            grid.applyForce(x, y, forceX, forceY);
-          }
-        }
-
-        // Remove dead player (bot will respawn)
-        if (userId === botId) {
-          cursors.removeCursor(botId);
-          // Respawn bot after 3 seconds
-          setTimeout(() => {
-            const centerX = window.innerWidth / 2;
-            const centerY = window.innerHeight / 2;
-            botAngle = Math.random() * Math.PI * 2;
-            const botX = centerX + Math.cos(botAngle) * botRadius;
-            const botY = centerY + Math.sin(botAngle) * botRadius;
-            cursors.updateCursor(botId, botX, botY, '#FF00FF', 'Bot');
-            console.log('🤖 Bot respawned!');
-          }, 3000);
-        }
-      }
-    }
-  });
-  */ // End of disabled remote collision code
-
   // Update controls (for continuous actions)
   controls.update();
 
@@ -1040,3 +852,8 @@ console.log('🎮 Controls:', controls.getBindings());
 if (playerKey) {
   console.log('📊 Score will be auto-submitted to INNSPIRE hub on disconnect');
 }
+
+// Listen for server-side scoreboard updates
+socket.on('score:update', (data: { scores: Array<{ playerId: string; playerName: string; score: number; kills: number; deaths: number }> }) => {
+  scoreManager.applySnapshot(data.scores);
+});
