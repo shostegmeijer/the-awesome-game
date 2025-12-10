@@ -139,6 +139,32 @@ export class CanvasManager {
       this.ctx.closePath();
       this.ctx.stroke();
       this.ctx.restore();
+
+      // Draw bot health bar (compact)
+      const barWidth = 40;
+      const barHeight = 5;
+      const barY = y + r + 6; // just below the hexagon
+
+      // Background
+      this.ctx.save();
+      this.ctx.shadowBlur = 5;
+      this.ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+      this.ctx.fillRect(x - barWidth / 2, barY, barWidth, barHeight);
+
+      // Fill based on health
+      const healthPercent = Math.max(0, Math.min(30, health)) / 30;
+      const healthWidth = Math.max(0, (barWidth - 2) * healthPercent);
+      let healthColor: string;
+      if (healthPercent > 0.6) healthColor = '#00ff00';
+      else if (healthPercent > 0.3) healthColor = '#ffff00';
+      else healthColor = '#ff0000';
+
+      this.ctx.shadowBlur = 8;
+      this.ctx.shadowColor = healthColor;
+      this.ctx.fillStyle = healthColor;
+      this.ctx.fillRect(x - barWidth / 2 + 1, barY + 1, healthWidth, barHeight - 2);
+      this.ctx.restore();
     } else {
     // Check cache for this color
     let shipCanvas = this.shipCache.get(color);

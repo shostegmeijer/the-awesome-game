@@ -93,7 +93,7 @@ export class BotSystem {
           userId: bot.id,
           x: nx,
           y: ny,
-          rotation: 0, // Client calculates rotation from movement
+          rotation: 0,
           color: '#00aaff',
           label: bot.label,
           health: bot.health,
