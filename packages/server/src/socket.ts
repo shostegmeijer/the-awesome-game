@@ -8,6 +8,7 @@ import { addUser, removeUser, updateCursor, getAllUsers, updateHealth } from './
 import { MineSystem } from './mines.js';
 import { PowerUpSystem } from './powerups.js';
 import { BulletSystem } from './bullets.js';
+import { LaserSystem } from './lasers.js';
 
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents>;
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
@@ -20,12 +21,14 @@ export function initializeSocketHandlers(io: TypedServer): void {
   const mineSystem = new MineSystem(io);
   const powerUpSystem = new PowerUpSystem(io);
   const bulletSystem = new BulletSystem();
+  const laserSystem = new LaserSystem(mineSystem);
 
   // Start server-side game loop (60 TPS)
   setInterval(() => {
     mineSystem.update();
     powerUpSystem.update();
     bulletSystem.update();
+    laserSystem.update();
 
     // Check collisions
     const users = getAllUsers();
@@ -75,6 +78,7 @@ export function initializeSocketHandlers(io: TypedServer): void {
         cursors[id] = {
           x: u.x,
           y: u.y,
+          rotation: u.rotation,
           color: u.color,
           label: u.label,
           health: u.health
@@ -88,19 +92,20 @@ export function initializeSocketHandlers(io: TypedServer): void {
     socket.emit('powerup:sync', { powerups: powerUpSystem.getPowerUps() });
 
     // Handle cursor movement (volatile for performance)
-    socket.on('cursor:move', ({ x, y }) => {
+    socket.on('cursor:move', ({ x, y, rotation }) => {
       // Validate coordinates
       if (typeof x !== 'number' || typeof y !== 'number') return;
       if (x < 0 || y < 0 || x > 10000 || y > 10000) return;
 
       // Update state
-      updateCursor(socket.id, x, y);
+      updateCursor(socket.id, x, y, rotation || 0);
 
       // Broadcast to other clients (volatile = UDP-like, prioritize speed over reliability)
       socket.volatile.broadcast.emit('cursor:update', {
         userId: socket.id,
         x,
-        y
+        y,
+        rotation: rotation || 0
       });
     });
 
@@ -137,20 +142,8 @@ export function initializeSocketHandlers(io: TypedServer): void {
       const user = getAllUsers().get(socket.id);
       if (!user) return;
 
-      // Broadcast laser to other clients
-      io.emit('laser:spawn', {
-        userId: socket.id,
-        x,
-        y,
-        angle,
-        color: user.color
-      });
-
-      // Check collisions with mines
-      const hitMineIds = mineSystem.checkLaserCollision(x, y, angle, 2000); // 2000 is beam range
-      hitMineIds.forEach(mineId => {
-        mineSystem.explodeMine(mineId, socket.id);
-      });
+      // Add to server tracking for continuous collision
+      laserSystem.addLaser(socket.id, angle);
     });
 
     // Handle health damage

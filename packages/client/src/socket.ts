@@ -51,8 +51,8 @@ export class SocketManager {
   /**
    * Emit cursor movement to server
    */
-  emitCursorMove(x: number, y: number): void {
-    this.socket.emit('cursor:move', { x, y });
+  emitCursorMove(x: number, y: number, rotation: number): void {
+    this.socket.emit('cursor:move', { x, y, rotation });
   }
 
   /**

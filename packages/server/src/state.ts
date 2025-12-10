@@ -6,6 +6,7 @@ export interface UserState {
   label: string;
   x: number;
   y: number;
+  rotation: number;
   health: number;
   lastUpdate: number;
   weaponType: string; // Track current weapon
@@ -26,6 +27,7 @@ export function addUser(id: string): UserState {
     label,
     x: 0,
     y: 0,
+    rotation: 0,
     health: 100,
     lastUpdate: Date.now(),
     weaponType: 'machineGun',
@@ -36,25 +38,17 @@ export function addUser(id: string): UserState {
   return user;
 }
 
-/**
- * Remove a user from the state
- */
-export function removeUser(id: string): void {
-  const user = users.get(id);
-  if (user) {
-    users.delete(id);
-    console.log(`❌ User removed: ${user.label} (${id})`);
-  }
-}
+// ... removeUser ...
 
 /**
  * Update cursor position for a user
  */
-export function updateCursor(id: string, x: number, y: number): void {
+export function updateCursor(id: string, x: number, y: number, rotation: number): void {
   const user = users.get(id);
   if (user) {
     user.x = x;
     user.y = y;
+    user.rotation = rotation;
     user.lastUpdate = Date.now();
   }
 }

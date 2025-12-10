@@ -4,6 +4,7 @@
 export interface CursorMovePayload {
   x: number;
   y: number;
+  rotation: number;
 }
 
 // Server → Client events
@@ -20,6 +21,7 @@ export interface UserLeftPayload {
 export interface CursorData {
   x: number;
   y: number;
+  rotation: number;
   color: string;
   label: string;
   health: number;
@@ -33,6 +35,7 @@ export interface CursorUpdatePayload {
   userId: string;
   x: number;
   y: number;
+  rotation: number;
 }
 
 // Payload for bullet shoot
