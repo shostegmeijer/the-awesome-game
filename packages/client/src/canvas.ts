@@ -1,6 +1,6 @@
-import { DEFAULT_SHIP_SHAPE, drawShipShape, type ShipShape } from './shapes.js';
+import { MAP_HEIGHT, MAP_WIDTH } from '@awesome-game/shared';
 import { ReactiveGrid } from './grid.js';
-import { MAP_WIDTH, MAP_HEIGHT } from '@awesome-game/shared';
+import { DEFAULT_SHIP_SHAPE, drawShipShape, type ShipShape } from './shapes.js';
 
 /**
  * Canvas manager for rendering cursors
@@ -96,7 +96,27 @@ export class CanvasManager {
   /**
    * Draw a cursor at the specified position (Geometry Wars style)
    */
-  drawCursor(x: number, y: number, color: string, label: string, rotation: number = 0, health: number = 100): void {
+  drawCursor(x: number, y: number, color: string, label: string, rotation: number = 0, health: number = 100, type: 'player' | 'bot'): void {
+    // Render based on cursor type
+    if (type === 'bot') {
+      // Hexagon for bots
+      const r = 20;
+      this.ctx.save();
+      this.ctx.shadowBlur = 12;
+      this.ctx.shadowColor = color;
+      this.ctx.strokeStyle = color;
+      this.ctx.lineWidth = 3;
+      this.ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const angle = (Math.PI / 3) * i; // 0,60,...300 degrees
+        const px = x + Math.cos(angle) * r;
+        const py = y + Math.sin(angle) * r;
+        if (i === 0) this.ctx.moveTo(px, py); else this.ctx.lineTo(px, py);
+      }
+      this.ctx.closePath();
+      this.ctx.stroke();
+      this.ctx.restore();
+    } else {
     // Check cache for this color
     let shipCanvas = this.shipCache.get(color);
 
@@ -174,6 +194,7 @@ export class CanvasManager {
     // Restore context state
     this.ctx.restore();
   }
+}
 
   /**
    * Get canvas element

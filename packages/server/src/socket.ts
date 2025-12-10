@@ -1,18 +1,20 @@
 
-import { Server, Socket } from 'socket.io';
 import {
-  ServerToClientEvents,
   ClientToServerEvents,
   CursorData,
+  MAP_HEIGHT,
   MAP_WIDTH,
-  MAP_HEIGHT
+  ServerToClientEvents
 } from '@awesome-game/shared';
-import { addUser, removeUser, updateCursor, getAllUsers, updateHealth, addKill, addDeath, getUserRank, markScoreSubmitted, applyKnockback, updatePhysics } from './state.js';
+import { Server, Socket } from 'socket.io';
+import { BotSystem } from './bots.js';
+import { BulletSystem } from './bullets.js';
+import { calculatePlacementScore, getPlayerName, submitScoreToHub } from './hub-api.js';
+import { ADMIN_PASSWORD } from './index.js';
+import { LaserSystem } from './lasers.js';
 import { MineSystem } from './mines.js';
 import { PowerUpSystem } from './powerups.js';
-import { BulletSystem } from './bullets.js';
-import { LaserSystem } from './lasers.js';
-import { submitScoreToHub, calculatePlacementScore, getPlayerName } from './hub-api.js';
+import { addBot, addDeath, addKill, addUser, getAllBots, getAllUsers, getSettings, getUserRank, markScoreSubmitted, removeBot, removeUser, setBotHealth, updateCursor, updateHealth, updateSettings, applyKnockback, updatePhysics } from './state.js';
 
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents>;
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
@@ -77,7 +79,11 @@ export function initializeSocketHandlers(io: TypedServer): void {
           userId,
           x: user.x,
           y: user.y,
-          rotation: 0
+          rotation: 0,
+          color: user.color,
+          label: user.label,
+          health: user.health,
+          type: 'player',
         });
       }
     }, RESPAWN_DELAY);
@@ -87,6 +93,7 @@ export function initializeSocketHandlers(io: TypedServer): void {
   const mineSystem = new MineSystem(io, handleDeath);
   const powerUpSystem = new PowerUpSystem(io);
   const bulletSystem = new BulletSystem();
+  const botSystem = new BotSystem(io, bulletSystem);
   const laserSystem = new LaserSystem(mineSystem);
 
   // Start server-side game loop (60 TPS)
@@ -125,129 +132,63 @@ export function initializeSocketHandlers(io: TypedServer): void {
         powerUpSystem.collectPowerUp(collectedPowerUp.id, user.id);
       }
 
-      // Check mine collision with player
-      const hitMineId = mineSystem.checkPlayerCollision(user.x, user.y, user.radius);
-      if (hitMineId) {
-        mineSystem.explodeMine(hitMineId, user.id);
+        // Check mine collision with player
+        const hitMineId = mineSystem.checkPlayerCollision(user.x, user.y, user.radius);
+        if (hitMineId) {
+          mineSystem.explodeMine(hitMineId, user.id);
+        }
       }
-    });
+      // Player respawn timing handled by handleDeath
+    );
 
-    // Check bullet collisions with mines
+    // Check bullet collisions with mines, users, and bots
     bulletSystem.getBullets().forEach(bullet => {
+      // Mines
       const hitMineId = mineSystem.checkBulletCollision(bullet.x, bullet.y);
       if (hitMineId) {
         mineSystem.explodeMine(hitMineId, bullet.userId);
         bulletSystem.removeBullet(bullet.id);
+        return;
       }
-    });
 
-    // Check bullet collisions with players (server-authoritative)
-    bulletSystem.getBullets().forEach(bullet => {
-      let bulletHit = false;
-
-      users.forEach(user => {
-        // Skip if bullet owner or already dead
-        if (bullet.userId === user.id || user.health <= 0) return;
-
-        // Check collision
-        const dx = user.x - bullet.x;
-        const dy = user.y - bullet.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        if (distance < user.radius + 3) { // 3 = bullet radius
-          bulletHit = true;
-
-          if (bullet.isRocket) {
-            // Rocket creates area explosion (handled below)
-            return;
+      // Users
+      const USER_RADIUS = 25;
+      const usersMap = getAllUsers();
+      for (const user of usersMap.values()) {
+        if (user.health <= 0) continue; // ignore dead players for collisions
+        if (bullet.userId === user.id) continue; // can't shoot yourself
+        const dx = bullet.x - user.x;
+        const dy = bullet.y - user.y;
+        const dist2 = dx * dx + dy * dy;
+        if (dist2 <= USER_RADIUS * USER_RADIUS) {
+          bulletSystem.removeBullet(bullet.id);
+          const newHealth = updateHealth(user.id, Math.max(0, user.health - 10));
+          if (newHealth !== null) {
+            io.emit('health:update', { userId: user.id, health: newHealth });
+            if (newHealth === 0) {
+              handleDeath(user.id);
+            }
           }
-
-          // Standard bullet hit
-          const knockbackStrength = 8; // Increased from 2.5
-          const bulletSpeed = Math.sqrt(bullet.vx * bullet.vx + bullet.vy * bullet.vy);
-          const knockbackX = (bullet.vx / bulletSpeed) * knockbackStrength;
-          const knockbackY = (bullet.vy / bulletSpeed) * knockbackStrength;
-
-          applyKnockback(user.id, knockbackX, knockbackY);
-
-          // Broadcast knockback to client
-          io.emit('knockback', {
-            userId: user.id,
-            vx: knockbackX,
-            vy: knockbackY
-          });
-
-          const damage = 15;
-          const oldHealth = user.health;
-          const newHealth = Math.max(0, user.health - damage);
-          updateHealth(user.id, newHealth);
-
-          io.emit('health:update', {
-            userId: user.id,
-            health: newHealth
-          });
-
-          if (oldHealth > 0 && newHealth <= 0) {
-            handleDeath(user.id, bullet.userId);
-          }
+          return;
         }
-      });
-
-      // Handle rocket explosion (splash damage and knockback)
-      if (bulletHit && bullet.isRocket) {
-        const explosionRadius = 150; // Rocket blast radius
-        const explosionDamage = 100;
-
-        users.forEach(user => {
-          const dx = user.x - bullet.x;
-          const dy = user.y - bullet.y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-
-          if (distance < explosionRadius) {
-            // Radial knockback (away from explosion)
-            if (distance > 0.1) {
-              const knockbackStrength = 25; // Massive explosion
-              const distanceFactor = 1 - (distance / explosionRadius);
-              const force = knockbackStrength * distanceFactor;
-              const knockbackX = (dx / distance) * force;
-              const knockbackY = (dy / distance) * force;
-
-              applyKnockback(user.id, knockbackX, knockbackY);
-
-              // Broadcast knockback to client
-              io.emit('knockback', {
-                userId: user.id,
-                vx: knockbackX,
-                vy: knockbackY
-              });
-            }
-
-            // Splash damage (less at distance)
-            const distanceFactor = 1 - (distance / explosionRadius);
-            const damage = Math.floor(explosionDamage * distanceFactor);
-            const oldHealth = user.health;
-            const newHealth = Math.max(0, user.health - damage);
-            updateHealth(user.id, newHealth);
-
-            io.emit('health:update', {
-              userId: user.id,
-              health: newHealth
-            });
-
-            // Don't give self kill credit for rocket suicide
-            if (oldHealth > 0 && newHealth <= 0) {
-              const isOwnRocket = bullet.userId === user.id;
-              handleDeath(user.id, isOwnRocket ? undefined : bullet.userId);
-            }
-          }
-        });
       }
 
-      if (bulletHit) {
-        bulletSystem.removeBullet(bullet.id);
+      // Bots
+      const BOT_RADIUS = 25;
+      const bots = getAllBots();
+      for (const bot of bots) {
+        const dx = bullet.x - bot.x;
+        const dy = bullet.y - bot.y;
+        const dist2 = dx * dx + dy * dy;
+        if (dist2 <= BOT_RADIUS * BOT_RADIUS) {
+          bulletSystem.removeBullet(bullet.id);
+          const newHealth = Math.max(0, bot.health - 10);
+          setBotHealth(bot.id, newHealth);
+          io.emit('health:update', { userId: bot.id, health: newHealth });
+          return;
+        }
       }
     });
-
   }, 16); // 16ms = ~60 updates per second
 
   io.on('connection', async (socket: TypedSocket) => {
@@ -274,14 +215,9 @@ export function initializeSocketHandlers(io: TypedServer): void {
       color: user.color
     });
 
-    // Notify other clients about the new user
-    socket.broadcast.emit('user:joined', {
-      userId: user.id,
-      color: user.color,
-      label: user.label
-    });
+    // Notify other clients about the new user (skipped; cursors:sync will reflect state)
 
-    // Send current users to the new client
+    // Send current users (excluding self) to the new client
     const cursors: Record<string, CursorData> = {};
     getAllUsers().forEach((u, id) => {
       if (id !== socket.id) {
@@ -291,9 +227,23 @@ export function initializeSocketHandlers(io: TypedServer): void {
           rotation: u.rotation,
           color: u.color,
           label: u.label,
-          health: u.health
+          health: u.health,
+          type: 'player',
+          activeWeapon: (u as any).weaponType,
         };
       }
+    });
+    // Include bots in initial cursors sync
+    getAllBots().forEach(bot => {
+      cursors[bot.id] = {
+        x: bot.x,
+        y: bot.y,
+        rotation: 0,
+        color: '#FF00FF',
+        label: bot.label,
+        health: bot.health,
+        type: 'bot',
+      };
     });
     socket.emit('cursors:sync', { cursors });
 
@@ -317,9 +267,14 @@ export function initializeSocketHandlers(io: TypedServer): void {
       // Broadcast new position to all other clients (optimized: only send x,y,rotation)
       socket.broadcast.emit('cursor:update', {
         userId: socket.id,
-        x: clampedX,
-        y: clampedY,
-        rotation
+        x,
+        y,
+        rotation: rotation || 0,
+        color: getAllUsers().get(socket.id)?.color || '#ffffff',
+        label: getAllUsers().get(socket.id)?.label || 'Player',
+        health: getAllUsers().get(socket.id)?.health || 100,
+        type: 'player',
+        activeWeapon: getAllUsers().get(socket.id)?.weaponType as any,
       });
     });
 
@@ -353,7 +308,7 @@ export function initializeSocketHandlers(io: TypedServer): void {
     });
 
     // Handle laser shooting
-    socket.on('laser:shoot', ({ x, y, angle }) => {
+    socket.on('laser:shoot', ({ angle }) => {
       const user = getAllUsers().get(socket.id);
       if (!user || user.health <= 0) return;
 
@@ -412,4 +367,100 @@ export function initializeSocketHandlers(io: TypedServer): void {
       io.emit('user:left', { userId: socket.id });
     });
   });
+
+  function isAuthorized(token?: string): boolean {
+    return !!token && token === ADMIN_PASSWORD;
+  }
+
+  io.on('connection', (socket) => {
+    socket.on('admin:login', ({ password }: { password: string }) => {
+      if (password === ADMIN_PASSWORD) {
+        socket.emit('admin:login:ok', { token: ADMIN_PASSWORD });
+      } else {
+        socket.emit('admin:login:error', { error: 'Invalid password' });
+      }
+    });
+
+    socket.on('admin:getPlayers', ({ token }: { token: string }) => {
+      if (!isAuthorized(token)) return socket.emit('admin:error', { error: 'Unauthorized' });
+      const players = Array.from(getAllUsers().values()).map(u => ({
+        id: u.id,
+        label: u.label,
+        x: u.x,
+        y: u.y,
+        health: u.health,
+        points: u.points
+      }));
+      socket.emit('admin:players', { players });
+    });
+
+    socket.on('admin:getBots', ({ token }: { token: string }) => {
+      if (!isAuthorized(token)) return socket.emit('admin:error', { error: 'Unauthorized' });
+      socket.emit('admin:bots', { bots: getAllBots() });
+    });
+
+    socket.on('admin:addBot', ({ token }: { token: string }) => {
+      if (!isAuthorized(token)) return socket.emit('admin:error', { error: 'Unauthorized' });
+      const bot = addBot(getSettings().botHealth);
+      // Also increase desired botCount so the maintenance loop keeps it
+      const s = getSettings();
+      updateSettings({ botCount: s.botCount + 1 });
+      socket.emit('admin:bots', { bots: getAllBots() });
+      socket.emit('admin:addBot:ok', { bot });
+    });
+
+    socket.on('admin:removeBot', ({ token, id }: { token: string, id: string }) => {
+      if (!isAuthorized(token)) return socket.emit('admin:error', { error: 'Unauthorized' });
+      const ok = removeBot(id);
+      if (!ok) return socket.emit('admin:removeBot:error', { error: 'bot not found', id });
+      // Also decrease desired botCount
+      const s = getSettings();
+      updateSettings({ botCount: Math.max(0, s.botCount - 1) });
+      socket.emit('admin:bots', { bots: getAllBots() });
+      socket.emit('admin:removeBot:ok', { removed: id });
+    });
+
+    socket.on('admin:kickPlayer', ({ token, id }: { token: string, id: string }) => {
+      if (!isAuthorized(token)) return socket.emit('admin:error', { error: 'Unauthorized' });
+      const targetSocket = io.sockets.sockets.get(id);
+      if (!targetSocket) {
+        return socket.emit('admin:kickPlayer:error', { error: 'Player not found', id });
+      }
+      const user = getAllUsers().get(id);
+      const playerName = user?.label || 'Unknown';
+      console.log(`🚪 Admin kicked player: ${playerName} (${id})`);
+      targetSocket.disconnect(true);
+      socket.emit('admin:kickPlayer:ok', { kicked: id });
+    });
+
+    // Settings get/set
+    socket.on('admin:getSettings', ({ token }: { token: string }) => {
+      if (!isAuthorized(token)) return socket.emit('admin:error', { error: 'Unauthorized' });
+      socket.emit('admin:settings', getSettings());
+    });
+    socket.on('admin:updateSettings', ({ token, settings }: { token: string, settings: Partial<ReturnType<typeof getSettings>> }) => {
+      if (!isAuthorized(token)) return socket.emit('admin:error', { error: 'Unauthorized' });
+      const updated = updateSettings(settings);
+      socket.emit('admin:settings', updated);
+    });
+  });
+
+  // Start bots system and periodically refresh admin bots table
+  botSystem.start();
+  setInterval(() => {
+    io.emit('admin:bots', { bots: getAllBots() });
+  }, 500);
+
+  // Periodically refresh admin players list
+  setInterval(() => {
+    const players = Array.from(getAllUsers().values()).map(u => ({
+      id: u.id,
+      label: u.label,
+      x: u.x,
+      y: u.y,
+      health: u.health,
+      points: u.points,
+    }));
+    io.emit('admin:players', { players });
+  }, 500);
 }

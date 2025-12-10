@@ -2,8 +2,8 @@
  * Power-up system (Client-side rendering only)
  */
 
-import { PowerUpData, WeaponType } from '@awesome-game/shared';
-import { WEAPONS, WeaponType as ClientWeaponType } from './weapons.js';
+import { PowerUpData } from '@awesome-game/shared';
+import { WeaponType as ClientWeaponType, WEAPONS } from './weapons.js';
 
 interface ClientPowerUp extends PowerUpData {
   pulsePhase: number;

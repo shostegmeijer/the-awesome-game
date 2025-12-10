@@ -10,6 +10,7 @@ export interface CursorMovePayload {
 // Server → Client events
 export interface UserJoinedPayload {
   userId: string;
+  cursors: CursorData[];
   color: string;
   label: string;
 }
@@ -25,6 +26,8 @@ export interface CursorData {
   color: string;
   label: string;
   health: number;
+  type: CursorType;
+  activeWeapon?: WeaponType;
 }
 
 export interface CursorsSyncPayload {
@@ -36,7 +39,14 @@ export interface CursorUpdatePayload {
   x: number;
   y: number;
   rotation: number;
+  color: string;
+  label: string;
+  health: number;
+  type: CursorType;
+  activeWeapon?: WeaponType;
 }
+
+export type CursorType = 'player' | 'bot';
 
 // Payload for bullet shoot
 export interface BulletShootPayload {
@@ -145,6 +155,8 @@ export interface KnockbackPayload {
 
 // Socket.io event map for type safety
 export interface ServerToClientEvents {
+  'reconnect': (attemptNumber: number) => void;
+  'reconnect_attempt': () => void;
   'user:joined': (data: UserJoinedPayload) => void;
   'user:left': (data: UserLeftPayload) => void;
   'cursors:sync': (data: CursorsSyncPayload) => void;
@@ -163,6 +175,19 @@ export interface ServerToClientEvents {
 
   'weapon:explode': (data: WeaponExplodePayload) => void;
   'laser:spawn': (data: LaserSpawnPayload) => void;
+
+  // Admin events (usable on admin namespace or default)
+  'admin:login:ok': (data: AdminLoginOkPayload) => void;
+  'admin:login:error': (data: AdminErrorPayload) => void;
+  'admin:error': (data: AdminErrorPayload) => void;
+  'admin:players': (data: AdminPlayersPayload) => void;
+  'admin:bots': (data: AdminBotsPayload) => void;
+  'admin:addBot:ok': (data: { bot: { id: string; label: string } }) => void;
+  'admin:removeBot:error': (data: AdminErrorPayload) => void;
+  'admin:removeBot:ok': (data: { removed: string }) => void;
+  'admin:kickPlayer:ok': (data: { kicked: string }) => void;
+  'admin:kickPlayer:error': (data: AdminErrorPayload) => void;
+  'admin:settings': (data: AdminSettingsPayload) => void;
   'player:respawn': (data: PlayerRespawnPayload) => void;
   'player:killed': (data: PlayerKilledPayload) => void;
   'player:info': (data: PlayerInfoPayload) => void;
@@ -195,4 +220,32 @@ export interface ClientToServerEvents {
   'laser:shoot': (data: LaserShootPayload) => void;
   'health:damage': (data: HealthUpdatePayload) => void;
   'admin:kickAll': () => void;
+
+  // Admin events
+  'admin:login': (data: { password: string }) => void;
+  'admin:getPlayers': (data: { token: string }) => void;
+  'admin:getBots': (data: { token: string }) => void;
+  'admin:addBot': (data: { token: string }) => void;
+  'admin:removeBot': (data: { token: string, id: string }) => void;
+  'admin:kickPlayer': (data: { token: string, id: string }) => void;
+  'admin:getSettings': (data: { token: string }) => void;
+  'admin:updateSettings': (data: { token: string, settings: Partial<AdminSettingsPayload> }) => void;
 }
+
+// --- Admin channel event maps ---
+export interface AdminLoginOkPayload { token: string }
+export interface AdminErrorPayload { error: string, id?: string }
+export interface AdminPlayersPayload {
+  players: Array<{ id: string; label: string; x: number; y: number; health: number; points: number }>
+}
+export interface AdminBotsPayload {
+  bots: Array<{ id: string; label: string; x: number; y: number; health: number }>
+}
+
+export interface AdminSettingsPayload {
+  botSpeed: number;
+  botCount: number;
+  botHealth: number;
+  playerStartingHealth: number;
+}
+

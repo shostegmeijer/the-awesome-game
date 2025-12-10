@@ -1,20 +1,20 @@
-import { CanvasManager } from './canvas.js';
-import { SocketManager } from './socket.js';
-import { CursorManager } from './cursor.js';
-import { ParticleSystem } from './particles.js';
-import { BulletSystem } from './bullets.js';
-import { ControlsManager } from './controls.js';
-import { ExplosionSystem } from './explosions.js';
-import { WeaponManager, WEAPONS, WeaponType } from './weapons.js';
-import { PowerUpSystem } from './powerups.js';
-import { ScreenShake } from './screenshake.js';
-import { ScoreManager } from './score.js';
+import { MAP_HEIGHT, MAP_WIDTH } from '@awesome-game/shared';
 import { AnnouncementSystem } from './announcements.js';
-import { MineSystem } from './mines.js';
-import { LaserSystem } from './laser.js';
+import { BulletSystem } from './bullets.js';
 import { Camera } from './camera.js';
-import { MAP_WIDTH, MAP_HEIGHT } from '@awesome-game/shared';
+import { CanvasManager } from './canvas.js';
+import { ControlsManager } from './controls.js';
+import { CursorManager } from './cursor.js';
+import { ExplosionSystem } from './explosions.js';
+import { LaserSystem } from './laser.js';
+import { MineSystem } from './mines.js';
+import { ParticleSystem } from './particles.js';
+import { PowerUpSystem } from './powerups.js';
+import { ScoreManager } from './score.js';
+import { ScreenShake } from './screenshake.js';
+import { SocketManager } from './socket.js';
 import './styles.css';
+import { WeaponManager, WEAPONS, WeaponType } from './weapons.js';
 
 console.log('🎮 Initializing multiplayer cursor game...');
 
@@ -114,7 +114,7 @@ if (playerKey) {
 // function triggerMineExplosion(mine: any, depth: number = 0): void { ... }
 
 // Test bot configuration
-const TEST_BOT_ENABLED = true; // Set to false to disable
+const TEST_BOT_ENABLED = false; // Set to false to disable
 const botId = 'test-bot';
 let botAngle = 0; // For circular movement
 const botRadius = 200; // Circle radius in pixels
@@ -236,7 +236,16 @@ socket.onCursorUpdate((data) => {
     console.warn('⚠️ Received cursor:update for self - ignoring');
     return;
   }
-  cursors.updateCursor(data.userId, data.x, data.y);
+  cursors.updateCursor(
+    data.userId,
+    data.x,
+    data.y,
+    data.color,
+    data.label,
+    data.health,
+    data.type,
+    data.rotation
+  );
 });
 
 socket.onPlayerRespawn((data) => {
@@ -438,7 +447,7 @@ socket.on('laser:spawn', (data) => {
       }
       return { x: data.x, y: data.y, rotation: data.angle };
     },
-    20, // Short lifetime for remote lasers as they are event-based? 
+    20, // Short lifetime for remote lasers as they are event-based?
     // Actually, main.ts uses weapon.bulletLifetime which is usually ~10-20 frames for laser?
     // Let's assume a standard duration or we should have passed it.
     // For now, 20 frames (approx 300ms) is decent for a burst laser.
@@ -707,7 +716,6 @@ canvas.startRenderLoop(() => {
   const laserAttackerId = mySocketId ? lasers.checkCollision(localCursor.x, localCursor.y, SHIP_COLLISION_RADIUS, mySocketId) : null;
 
   if (laserAttackerId) {
-    const oldHealth = localCursor.health;
     localCursor.health = Math.max(0, localCursor.health - WEAPONS[WeaponType.LASER].damage);
     console.log(`🔥 Hit by laser! Health: ${localCursor.health}`);
 
@@ -881,7 +889,7 @@ canvas.startRenderLoop(() => {
       particles.spawn(localCursor.x, localCursor.y, localCursor.rotation, '#FF6600', speed);
     }
 
-    canvas.drawCursor(localCursor.x, localCursor.y, localCursor.color, localCursor.label, localCursor.rotation, localCursor.health);
+    canvas.drawCursor(localCursor.x, localCursor.y, localCursor.color, localCursor.label, localCursor.rotation, localCursor.health, 'player');
   }
 
   // Render all remote cursors with rotation and spawn their particles
@@ -900,7 +908,7 @@ canvas.startRenderLoop(() => {
       particles.spawn(cursor.x, cursor.y, cursor.rotation, '#FF6600', speed);
     }
 
-    canvas.drawCursor(cursor.x, cursor.y, cursor.color, cursor.label, cursor.rotation, cursor.health);
+    canvas.drawCursor(cursor.x, cursor.y, cursor.color, cursor.label, cursor.rotation, cursor.health, cursor.type || 'player');
   });
 
   // Draw grid overlay AFTER everything to pick up glow
