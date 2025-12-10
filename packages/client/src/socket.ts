@@ -7,7 +7,8 @@ import type {
   CursorsSyncPayload,
   CursorUpdatePayload,
   BulletUpdatePayload,
-  HealthUpdatePayload
+  HealthUpdatePayload,
+  PlayerRespawnPayload
 } from '@awesome-game/shared';
 
 type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -58,8 +59,8 @@ export class SocketManager {
   /**
    * Emit bullet shoot to server
    */
-  emitBulletShoot(x: number, y: number, angle: number): void {
-    this.socket.emit('bullet:shoot', { x, y, angle });
+  emitBulletShoot(x: number, y: number, angle: number, isRocket?: boolean): void {
+    this.socket.emit('bullet:shoot', { x, y, angle, isRocket });
   }
 
   /**
@@ -119,6 +120,13 @@ export class SocketManager {
    */
   onHealthUpdate(callback: (data: HealthUpdatePayload) => void): void {
     this.socket.on('health:update', callback);
+  }
+
+  /**
+   * Listen for player respawn events
+   */
+  onPlayerRespawn(callback: (data: PlayerRespawnPayload) => void): void {
+    this.socket.on('player:respawn', callback);
   }
 
   /**

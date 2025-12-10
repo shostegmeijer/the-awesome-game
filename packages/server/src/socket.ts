@@ -17,8 +17,47 @@ type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
  * Initialize Socket.io event handlers
  */
 export function initializeSocketHandlers(io: TypedServer): void {
+  // Centralized death handler
+  const handleDeath = (userId: string) => {
+    const RESPAWN_DELAY = 10000;
+    const respawnTime = Date.now() + RESPAWN_DELAY;
+
+    // Notify all users about respawn (so everyone knows)
+    io.emit('player:respawn', {
+      userId,
+      x: 0,
+      y: 0,
+      respawnTime
+    });
+
+    setTimeout(() => {
+      const user = getAllUsers().get(userId);
+      if (user) {
+        // Reset user state
+        user.health = 100;
+        user.x = Math.random() * 2000;
+        user.y = Math.random() * 2000;
+        user.weaponType = 'machineGun';
+
+        // Notify all clients about respawn (health update + position update)
+        io.emit('health:update', {
+          userId,
+          health: 100
+        });
+
+        // Force position update
+        io.emit('cursor:update', {
+          userId,
+          x: user.x,
+          y: user.y,
+          rotation: 0
+        });
+      }
+    }, RESPAWN_DELAY);
+  };
+
   // Initialize game systems
-  const mineSystem = new MineSystem(io);
+  const mineSystem = new MineSystem(io, handleDeath);
   const powerUpSystem = new PowerUpSystem(io);
   const bulletSystem = new BulletSystem();
   const laserSystem = new LaserSystem(mineSystem);
@@ -110,9 +149,9 @@ export function initializeSocketHandlers(io: TypedServer): void {
     });
 
     // Handle bullet shooting
-    socket.on('bullet:shoot', ({ x, y, angle }) => {
+    socket.on('bullet:shoot', ({ x, y, angle, isRocket }) => {
       const user = getAllUsers().get(socket.id);
-      if (!user) return;
+      if (!user || user.health <= 0) return;
 
       // Generate unique bullet ID
       const bulletId = `${socket.id}-${Date.now()}-${Math.random()}`;
@@ -133,14 +172,15 @@ export function initializeSocketHandlers(io: TypedServer): void {
         y,
         vx,
         vy,
-        color: user.color
+        color: user.color,
+        isRocket
       });
     });
 
     // Handle laser shooting
     socket.on('laser:shoot', ({ x, y, angle }) => {
       const user = getAllUsers().get(socket.id);
-      if (!user) return;
+      if (!user || user.health <= 0) return;
 
       // Add to server tracking for continuous collision
       laserSystem.addLaser(socket.id, angle);
@@ -155,6 +195,11 @@ export function initializeSocketHandlers(io: TypedServer): void {
           userId,
           health: newHealth
         });
+
+        // Check for death and schedule respawn
+        if (newHealth <= 0) {
+          handleDeath(userId);
+        }
       }
     });
 

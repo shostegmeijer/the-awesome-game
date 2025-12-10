@@ -40,8 +40,8 @@ export class PowerUpSystem {
      */
     spawn(): void {
         const padding = 100;
-        const mapWidth = 2000;
-        const mapHeight = 2000;
+        const mapWidth = 4000;
+        const mapHeight = 1000;
         // Using window fallback for now, ideally should use map config
         const x = padding + Math.random() * (mapWidth - padding * 2);
         const y = padding + Math.random() * (mapHeight - padding * 2);

@@ -21,6 +21,7 @@ export interface WeaponConfig {
   spread: number;
   bulletLifetime: number;
   icon: string;
+  maxAmmo: number; // 0 for infinite
 }
 
 export const WEAPONS: Record<WeaponType, WeaponConfig> = {
@@ -34,7 +35,8 @@ export const WEAPONS: Record<WeaponType, WeaponConfig> = {
     bulletCount: 1,
     spread: 0,
     bulletLifetime: 120,
-    icon: '🔫'
+    icon: '🔫',
+    maxAmmo: 0 // Infinite
   },
   [WeaponType.TRIPLE_SHOT]: {
     type: WeaponType.TRIPLE_SHOT,
@@ -46,7 +48,8 @@ export const WEAPONS: Record<WeaponType, WeaponConfig> = {
     bulletCount: 3,
     spread: 0.2,
     bulletLifetime: 120,
-    icon: '⚡'
+    icon: '⚡',
+    maxAmmo: 3
   },
   [WeaponType.SHOTGUN]: {
     type: WeaponType.SHOTGUN,
@@ -58,7 +61,8 @@ export const WEAPONS: Record<WeaponType, WeaponConfig> = {
     bulletCount: 20,
     spread: 0.02,
     bulletLifetime: 50,
-    icon: '💥'
+    icon: '💥',
+    maxAmmo: 3
   },
   [WeaponType.ROCKET]: {
     type: WeaponType.ROCKET,
@@ -70,7 +74,8 @@ export const WEAPONS: Record<WeaponType, WeaponConfig> = {
     bulletCount: 1,
     spread: 0,
     bulletLifetime: 180, // Longer lifetime
-    icon: '🚀'
+    icon: '🚀',
+    maxAmmo: 3
   },
   [WeaponType.LASER]: {
     type: WeaponType.LASER,
@@ -82,12 +87,14 @@ export const WEAPONS: Record<WeaponType, WeaponConfig> = {
     bulletCount: 1,
     spread: 0,
     bulletLifetime: 120, // 2 seconds at 60fps
-    icon: '🔥'
+    icon: '🔥',
+    maxAmmo: 3
   }
 };
 
 export class WeaponManager {
   private currentWeapon: WeaponType = WeaponType.MACHINE_GUN;
+  private currentAmmo: number = 0;
 
   /**
    * Get current weapon config
@@ -97,10 +104,33 @@ export class WeaponManager {
   }
 
   /**
-   * Set weapon (one-time use)
+   * Get current ammo count
+   */
+  getAmmo(): number {
+    return this.currentAmmo;
+  }
+
+  /**
+   * Set weapon (resets ammo)
    */
   setWeapon(type: WeaponType): void {
     this.currentWeapon = type;
+    this.currentAmmo = WEAPONS[type].maxAmmo;
+  }
+
+  /**
+   * Use ammo - returns true if weapon should be reset
+   */
+  useAmmo(): boolean {
+    const weapon = this.getCurrentWeapon();
+    if (weapon.maxAmmo === 0) return false; // Infinite ammo
+
+    this.currentAmmo--;
+    if (this.currentAmmo <= 0) {
+      this.resetToMachineGun();
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -108,6 +138,7 @@ export class WeaponManager {
    */
   resetToMachineGun(): void {
     this.currentWeapon = WeaponType.MACHINE_GUN;
+    this.currentAmmo = 0;
   }
 
   /**

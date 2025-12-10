@@ -14,16 +14,18 @@ interface Mine extends MineData {
 export class MineSystem {
     private mines: Mine[] = [];
     private nextId = 0;
-    private spawnInterval = 5000; // Spawn every 5 seconds
+    private spawnInterval = 2000; // Spawn every 5 seconds
     private lastSpawnTime = 0;
     private maxMines = 10;
     private mineRadius = 20;
-    private damageRadius = 120;
+    private damageRadius = 240;
     private mineDamage = 40;
     private io: Server<ClientToServerEvents, ServerToClientEvents>;
+    private onDeath: (userId: string) => void;
 
-    constructor(io: Server<ClientToServerEvents, ServerToClientEvents>) {
+    constructor(io: Server<ClientToServerEvents, ServerToClientEvents>, onDeath: (userId: string) => void) {
         this.io = io;
+        this.onDeath = onDeath;
     }
 
     /**
@@ -45,8 +47,8 @@ export class MineSystem {
     spawn(): void {
         const padding = 100;
         // Assuming a fixed map size for now, or we could pass map dimensions
-        const mapWidth = 2000; // Default large map
-        const mapHeight = 2000;
+        const mapWidth = 4000; // Default large map
+        const mapHeight = 1000;
 
         // For now, let's use a smaller area that matches typical screen size to ensure visibility during testing
         // In a real game, this should be the full map size
@@ -178,6 +180,7 @@ export class MineSystem {
             const distance = Math.sqrt(dx * dx + dy * dy);
 
             if (distance < mine.damageRadius) {
+                const oldHealth = user.health;
                 const newHealth = Math.max(0, user.health - mine.damage);
                 updateHealth(user.id, newHealth);
 
@@ -185,6 +188,10 @@ export class MineSystem {
                     userId: user.id,
                     health: newHealth
                 });
+
+                if (oldHealth > 0 && newHealth <= 0) {
+                    this.onDeath(user.id);
+                }
 
                 if (triggeredByUserId && newHealth <= 0 && user.health > 0) {
                     // Handle kill credit if needed

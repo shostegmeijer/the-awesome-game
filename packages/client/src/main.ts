@@ -51,6 +51,7 @@ const lasers = new LaserSystem();
 // Track local cursor position (bright cyan for visibility)
 let localCursor = { x: 0, y: 0, rotation: 0, health: 50, color: '#00FFFF', label: 'You' };
 let targetPosition = { x: 0, y: 0 }; // Mouse target position
+let respawnTimeEnd = 0; // Timestamp when respawn happens
 const followSpeed = 0.08; // Lower = more lag, higher = more responsive (increased delay)
 const rotationSpeed = 0.1; // Smooth rotation interpolation
 
@@ -90,6 +91,8 @@ function throttle<T extends (...args: any[]) => void>(fn: T, delay: number): T {
 
 // Set up controls - shoot with weapon cooldown
 controls.onAction('shoot', () => {
+  if (localCursor.health <= 0) return; // Cannot shoot if dead
+
   const currentTime = Date.now();
   const weapon = weaponManager.getCurrentWeapon();
 
@@ -109,7 +112,7 @@ controls.onAction('shoot', () => {
     );
     socket.emitLaserShoot(localCursor.x, localCursor.y, localCursor.rotation);
     console.log(`💥 ${weapon.icon} LASER!`);
-    weaponManager.resetToMachineGun();
+    weaponManager.useAmmo();
     return;
   }
 
@@ -120,21 +123,23 @@ controls.onAction('shoot', () => {
   // Spawn bullets locally and send to server
   bulletData.forEach(({ angle }) => {
     bullets.shoot(localCursor.x, localCursor.y, angle, socket.getSocketId() || 'local', weapon.color, isRocket);
-    socket.emitBulletShoot(localCursor.x, localCursor.y, angle);
+    socket.emitBulletShoot(localCursor.x, localCursor.y, angle, isRocket);
   });
 
   console.log(`💥 ${weapon.icon} Pew!`);
 
   // Reset to machine gun after using special weapon
-  if (!weaponManager.isMachineGun()) {
-    weaponManager.resetToMachineGun();
+  // Check if we should reset weapon (if out of ammo)
+  if (weaponManager.useAmmo()) {
+    console.log('⚠️ Weapon empty, switching to Machine Gun');
   }
 });
 
 // Socket event handlers
 socket.onUserJoined((data) => {
   console.log(`👋 User joined: ${data.label}`);
-  // User will send cursor position via cursor:update events
+  // Register cursor immediately so we have the label/color
+  cursors.updateCursor(data.userId, -10000, -10000, data.color, data.label);
 });
 
 socket.onUserLeft((data) => {
@@ -147,6 +152,14 @@ socket.onCursorsSync((data) => {
 
 socket.onCursorUpdate((data) => {
   cursors.updateCursor(data.userId, data.x, data.y);
+});
+
+socket.onPlayerRespawn((data) => {
+  console.log('💀 Received respawn event:', data, 'My ID:', socket.getSocketId());
+  if (data.userId === socket.getSocketId()) {
+    respawnTimeEnd = data.respawnTime;
+    console.log(`🕒 Respawning in ${Math.ceil((data.respawnTime - Date.now()) / 1000)}s`);
+  }
 });
 
 // Handle bullet spawn from network
@@ -163,7 +176,7 @@ socket.onBulletSpawn((data) => {
     if (remoteCursor) {
       // Calculate angle from velocity
       const angle = Math.atan2(data.vy, data.vx);
-      bullets.shoot(remoteCursor.x, remoteCursor.y, angle, data.userId, data.color);
+      bullets.shoot(remoteCursor.x, remoteCursor.y, angle, data.userId, data.color, data.isRocket);
     }
   }
 });
@@ -174,6 +187,9 @@ socket.onHealthUpdate((data) => {
   if (data.userId === socket.getSocketId() || data.userId === 'local') {
     localCursor.health = data.health;
     console.log(`❤️ Health updated: ${localCursor.health}`);
+    if (localCursor.health > 0) {
+      respawnTimeEnd = 0;
+    }
   } else {
     cursors.setHealth(data.userId, data.health);
   }
@@ -462,15 +478,8 @@ canvas.startRenderLoop(() => {
         }
       }
 
-      // Respawn after 3 seconds
-      setTimeout(() => {
-        localCursor.health = 50;
-        localCursor.x = window.innerWidth / 2;
-        localCursor.y = window.innerHeight / 2;
-        targetPosition.x = localCursor.x;
-        targetPosition.y = localCursor.y;
-        console.log('✨ You respawned!');
-      }, 3000);
+      // Respawn handled by server
+      console.log('⏳ Waiting for server respawn...');
     }
   }
 
@@ -616,14 +625,32 @@ canvas.startRenderLoop(() => {
   announcements.render(ctx);
 
   // Display current weapon
-  const currentWeapon = weaponManager.getCurrentWeapon();
-  ctx.save();
-  ctx.shadowBlur = 10;
-  ctx.shadowColor = currentWeapon.color;
-  ctx.fillStyle = currentWeapon.color;
-  ctx.font = 'bold 20px Arial';
-  ctx.textAlign = 'right';
-  ctx.fillText(`${currentWeapon.icon} ${currentWeapon.name}`, window.innerWidth - 30, window.innerHeight - 30);
+  // Display current weapon (if alive)
+  if (localCursor.health > 0) {
+    const currentWeapon = weaponManager.getCurrentWeapon();
+    const ammo = weaponManager.getAmmo();
+    const ammoText = currentWeapon.maxAmmo > 0 ? ` x${ammo}` : '';
+
+    ctx.save();
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = currentWeapon.color;
+    ctx.fillStyle = currentWeapon.color;
+    ctx.font = 'bold 20px Arial';
+    ctx.textAlign = 'right';
+    ctx.fillText(`${currentWeapon.icon} ${currentWeapon.name}${ammoText}`, window.innerWidth - 30, window.innerHeight - 30);
+    ctx.restore();
+  } else {
+    // Display respawn timer
+    const remaining = Math.max(0, Math.ceil((respawnTimeEnd - Date.now()) / 1000));
+    ctx.save();
+    ctx.fillStyle = '#FF0000';
+    ctx.font = 'bold 40px Arial';
+    ctx.textAlign = 'center';
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = '#FF0000';
+    ctx.fillText(`RESPAWN IN ${remaining}`, window.innerWidth / 2, window.innerHeight / 2);
+    ctx.restore();
+  }
   ctx.restore();
 });
 
@@ -632,8 +659,8 @@ const canvasElement = canvas.getCanvas();
 
 // Create throttled emit function (local network = much faster polling)
 // 5ms = 200 updates/sec (great for local network with low latency)
-const throttledEmit = throttle((x: number, y: number) => {
-  socket.emitCursorMove(x, y);
+const throttledEmit = throttle((x: number, y: number, rotation: number) => {
+  socket.emitCursorMove(x, y, rotation);
 }, 5);
 
 // Track mouse movement
@@ -646,7 +673,7 @@ canvasElement.addEventListener('mousemove', (e: MouseEvent) => {
   targetPosition.y = y;
 
   // Send actual cursor position to server (throttled)
-  throttledEmit(localCursor.x, localCursor.y);
+  throttledEmit(localCursor.x, localCursor.y, localCursor.rotation);
 });
 
 console.log('✅ App initialized - move your mouse and press SPACE to shoot!');

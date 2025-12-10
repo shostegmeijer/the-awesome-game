@@ -5,8 +5,8 @@
 interface LaserBeam {
   getPosition: () => { x: number; y: number }; // Function to get current position
   angle: number;
-  lifetime: number;
-  maxLifetime: number;
+  startTime: number;
+  durationMs: number;
   ownerId: string;
   color: string;
   texture?: HTMLCanvasElement; // Prerendered texture
@@ -85,7 +85,7 @@ export class LaserSystem {
   /**
    * Fire a laser beam that follows the player
    */
-  fire(getPosition: () => { x: number; y: number; rotation: number }, lifetime: number, ownerId: string, color: string): void {
+  fire(getPosition: () => { x: number; y: number; rotation: number }, lifetimeFrames: number, ownerId: string, color: string): void {
     const posFunc = getPosition;
     const beam: LaserBeam = {
       getPosition: () => {
@@ -93,8 +93,8 @@ export class LaserSystem {
         return { x: pos.x, y: pos.y };
       },
       angle: posFunc().rotation, // Will be updated each frame
-      lifetime,
-      maxLifetime: lifetime,
+      startTime: Date.now(),
+      durationMs: lifetimeFrames * 16.66, // Convert frames (60fps) to ms
       ownerId,
       color,
       texture: this.getLaserTexture(color)
@@ -110,9 +110,8 @@ export class LaserSystem {
    * Update all beams
    */
   update(): void {
+    const now = Date.now();
     this.beams.forEach(beam => {
-      beam.lifetime--;
-
       // Update angle from position function
       const posFunc = (beam as any).posFunc;
       if (posFunc) {
@@ -121,7 +120,7 @@ export class LaserSystem {
     });
 
     // Remove expired beams
-    this.beams = this.beams.filter(beam => beam.lifetime > 0);
+    this.beams = this.beams.filter(beam => now - beam.startTime < beam.durationMs);
   }
 
   /**
@@ -197,8 +196,9 @@ export class LaserSystem {
       ctx.save();
 
       const pos = beam.getPosition();
-      const fadeProgress = 1 - (beam.lifetime / beam.maxLifetime);
-      const alpha = 1 - fadeProgress * 0.5; // Fade to 50%
+      const elapsed = Date.now() - beam.startTime;
+      const fadeProgress = elapsed / beam.durationMs;
+      const alpha = Math.max(0, 1 - fadeProgress * 0.5); // Fade to 50%
 
       ctx.globalAlpha = alpha;
       ctx.translate(pos.x, pos.y);

@@ -83,6 +83,22 @@ export function updateHealth(id: string, health: number): number | null {
 }
 
 /**
+ * Respawn a user
+ */
+export function respawnUser(id: string): UserState | null {
+  const user = users.get(id);
+  if (user) {
+    user.health = 100;
+    user.x = Math.random() * 2000; // Random position
+    user.y = Math.random() * 2000;
+    user.weaponType = 'machineGun'; // Reset weapon
+    console.log(`✨ ${user.label} respawned at ${Math.round(user.x)}, ${Math.round(user.y)}`);
+    return user;
+  }
+  return null;
+}
+
+/**
  * Generate a random neon color for a user (Geometry Wars style)
  */
 function generateColor(): string {

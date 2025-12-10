@@ -43,6 +43,7 @@ export interface BulletShootPayload {
   x: number;
   y: number;
   angle: number;
+  isRocket?: boolean;
 }
 
 // Payload for bullet update
@@ -54,6 +55,7 @@ export interface BulletUpdatePayload {
   vx: number;
   vy: number;
   color: string;
+  isRocket?: boolean;
 }
 
 // Payload for health update
@@ -153,6 +155,14 @@ export interface ServerToClientEvents {
 
   'weapon:explode': (data: WeaponExplodePayload) => void;
   'laser:spawn': (data: LaserSpawnPayload) => void;
+  'player:respawn': (data: PlayerRespawnPayload) => void;
+}
+
+export interface PlayerRespawnPayload {
+  userId: string;
+  x: number;
+  y: number;
+  respawnTime: number; // Timestamp when respawn happens
 }
 
 export interface ClientToServerEvents {

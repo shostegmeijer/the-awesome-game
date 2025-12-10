@@ -18,7 +18,7 @@ export class LaserSystem {
     /**
      * Add a new laser
      */
-    addLaser(userId: string, angle: number, duration: number = 20): void {
+    addLaser(userId: string, angle: number, duration: number = 120): void {
         // Remove existing laser for this user if any (one laser per user)
         this.removeLaser(userId);
 
