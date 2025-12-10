@@ -5,6 +5,13 @@ import { ParticleSystem } from './particles.js';
 import { BulletSystem } from './bullets.js';
 import { ControlsManager } from './controls.js';
 import { ExplosionSystem } from './explosions.js';
+import { WeaponManager, WEAPONS, WeaponType } from './weapons.js';
+import { PowerUpSystem } from './powerups.js';
+import { ScreenShake } from './screenshake.js';
+import { ScoreManager } from './score.js';
+import { AnnouncementSystem } from './announcements.js';
+import { MineSystem } from './mines.js';
+import { LaserSystem } from './laser.js';
 import './styles.css';
 
 console.log('🎮 Initializing multiplayer cursor game...');
@@ -32,19 +39,75 @@ const explosions = new ExplosionSystem();
 // Initialize controls
 const controls = new ControlsManager();
 
+// Initialize new game systems
+const weaponManager = new WeaponManager();
+const powerUps = new PowerUpSystem();
+const screenShake = new ScreenShake();
+const scoreManager = new ScoreManager();
+const announcements = new AnnouncementSystem();
+const mines = new MineSystem();
+const lasers = new LaserSystem();
+
 // Track local cursor position (bright cyan for visibility)
-let localCursor = { x: 0, y: 0, rotation: 0, health: 100, color: '#00FFFF', label: 'You' };
+let localCursor = { x: 0, y: 0, rotation: 0, health: 50, color: '#00FFFF', label: 'You' };
 let targetPosition = { x: 0, y: 0 }; // Mouse target position
 const followSpeed = 0.08; // Lower = more lag, higher = more responsive (increased delay)
 const rotationSpeed = 0.1; // Smooth rotation interpolation
 
 // Shooting rate limiting
 let lastShotTime = 0;
-const shootCooldown = 150; // Milliseconds between shots (6-7 shots per second)
 
 // Collision settings
 const SHIP_COLLISION_RADIUS = 25; // Pixels
-const BULLET_DAMAGE = 10; // Damage per hit
+
+// Initialize local player score
+const mySocketId = socket.getSocketId();
+if (mySocketId) {
+  scoreManager.initPlayer(mySocketId, 'You');
+}
+
+// Helper function to trigger mine explosion with chain reactions
+function triggerMineExplosion(mine: any, depth: number = 0): void {
+  if (depth > 10) return; // Prevent infinite recursion
+
+  // Visual effects
+  explosions.explode(mine.x, mine.y, '#FF6600', 3);
+  particles.explode(mine.x, mine.y, '#FF6600', 400);
+  screenShake.shake(15 + depth * 3, 300);
+
+  // Apply shockwave to grid
+  for (let angle = 0; angle < Math.PI * 2; angle += 0.2) {
+    const forceX = Math.cos(angle) * 50;
+    const forceY = Math.sin(angle) * 50;
+    grid.applyForce(mine.x, mine.y, forceX, forceY);
+  }
+
+  // Check if explosion damages players
+  const targets = [
+    { x: localCursor.x, y: localCursor.y, id: socket.getSocketId() || 'local' }
+  ];
+  cursors.getCursors().forEach((cursor, id) => {
+    targets.push({ x: cursor.x, y: cursor.y, id });
+  });
+
+  const hitPlayers = mines.getExplosionTargets(mine.x, mine.y, mine.damageRadius, targets);
+  hitPlayers.forEach(playerId => {
+    if (playerId === socket.getSocketId() || playerId === 'local') {
+      localCursor.health = Math.max(0, localCursor.health - mine.damage);
+      console.log(`💣 Hit by mine explosion! Health: ${localCursor.health}`);
+    } else {
+      cursors.damageCursor(playerId, mine.damage);
+    }
+  });
+
+  // Check for chain reactions!
+  const chainMines = mines.checkExplosionHitsMines(mine.x, mine.y, mine.damageRadius);
+  chainMines.forEach(chainMine => {
+    setTimeout(() => {
+      triggerMineExplosion(chainMine, depth + 1);
+    }, 100); // Small delay for cascading effect
+  });
+}
 
 // Test bot configuration
 const TEST_BOT_ENABLED = true; // Set to false to disable
@@ -65,11 +128,46 @@ function throttle<T extends (...args: any[]) => void>(fn: T, delay: number): T {
   }) as T;
 }
 
-// Set up controls - shoot on every press
+// Set up controls - shoot with weapon cooldown
 controls.onAction('shoot', () => {
-  // Only send to server - server will broadcast back to everyone including us
-  socket.emitBulletShoot(localCursor.x, localCursor.y, localCursor.rotation);
-  console.log('💥 Pew!');
+  const currentTime = Date.now();
+  const weapon = weaponManager.getCurrentWeapon();
+
+  if (currentTime - lastShotTime < weapon.cooldown) {
+    return; // Still on cooldown
+  }
+
+  lastShotTime = currentTime;
+
+  // Handle laser weapon differently
+  if (weapon.type === WeaponType.LASER) {
+    lasers.fire(
+      () => ({ x: localCursor.x, y: localCursor.y, rotation: localCursor.rotation }),
+      weapon.bulletLifetime,
+      socket.getSocketId() || 'local',
+      weapon.color
+    );
+    console.log(`💥 ${weapon.icon} LASER!`);
+    weaponManager.resetToMachineGun();
+    return;
+  }
+
+  // Get bullet data based on current weapon
+  const bulletData = weaponManager.getBulletData(localCursor.x, localCursor.y, localCursor.rotation);
+  const isRocket = weapon.type === WeaponType.ROCKET;
+
+  // Spawn bullets locally and send to server
+  bulletData.forEach(({ angle, speed }) => {
+    bullets.shoot(localCursor.x, localCursor.y, angle, socket.getSocketId() || 'local', weapon.color, isRocket);
+    socket.emitBulletShoot(localCursor.x, localCursor.y, angle);
+  });
+
+  console.log(`💥 ${weapon.icon} Pew!`);
+
+  // Reset to machine gun after using special weapon
+  if (!weaponManager.isMachineGun()) {
+    weaponManager.resetToMachineGun();
+  }
 });
 
 // Socket event handlers
@@ -129,6 +227,7 @@ if (TEST_BOT_ENABLED) {
   const botY = centerY + Math.sin(botAngle) * botRadius;
 
   cursors.updateCursor(botId, botX, botY, '#FF00FF', 'Bot');
+  scoreManager.initPlayer(botId, 'Bot');
   console.log('🤖 Test bot initialized');
 }
 
@@ -184,25 +283,128 @@ canvas.startRenderLoop(() => {
     grid.applyForce(bullet.x, bullet.y, bullet.vx * 0.3, bullet.vy * 0.3);
   });
 
-  // Check collisions - local player (use socket ID to avoid hitting yourself)
+  // Update new game systems
+  const currentTime = performance.now();
+  powerUps.update(currentTime);
+  mines.update(currentTime);
+  screenShake.update();
+  announcements.update();
+
+  // Update laser system
+  lasers.update();
+
+  // Check power-up collection
+  const collectedWeapon = powerUps.checkCollection(localCursor.x, localCursor.y);
+  if (collectedWeapon) {
+    weaponManager.setWeapon(collectedWeapon); // One-time use
+    const weapon = WEAPONS[collectedWeapon];
+    announcements.announcePowerUp(weapon.name, weapon.icon);
+    scoreManager.addPoints(socket.getSocketId() || 'local', 50);
+  }
+
+  // Spawn particles from rockets
+  bullets.getBullets().forEach(bullet => {
+    if (bullet.isRocket) {
+      particles.spawn(bullet.x, bullet.y, Math.atan2(bullet.vy, bullet.vx) + Math.PI, '#FF6600', 10);
+    }
+  });
+
+  // Check for rocket explosions (after traveling for a while)
+  bullets.getBullets().forEach(bullet => {
+    if (bullet.isRocket && bullet.lifetime > 60) { // After 1 second
+      // Explode rocket!
+      explosions.explode(bullet.x, bullet.y, bullet.color, 4);
+      particles.explode(bullet.x, bullet.y, bullet.color, 500);
+      screenShake.shake(20, 400);
+
+      // Apply damage to nearby players
+      const targets = [
+        { x: localCursor.x, y: localCursor.y, id: socket.getSocketId() || 'local' }
+      ];
+      cursors.getCursors().forEach((cursor, id) => {
+        targets.push({ x: cursor.x, y: cursor.y, id });
+      });
+
+      const explosionRadius = 100;
+      targets.forEach(target => {
+        const dx = target.x - bullet.x;
+        const dy = target.y - bullet.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance < explosionRadius) {
+          if (target.id === socket.getSocketId() || target.id === 'local') {
+            localCursor.health = Math.max(0, localCursor.health - WEAPONS[WeaponType.ROCKET].damage);
+            console.log(`🚀 Hit by rocket! Health: ${localCursor.health}`);
+          } else {
+            cursors.damageCursor(target.id, WEAPONS[WeaponType.ROCKET].damage);
+          }
+        }
+      });
+
+      // Remove rocket after explosion
+      const index = bullets.getBullets().indexOf(bullet);
+      if (index > -1) {
+        bullets.getBullets().splice(index, 1);
+      }
+    }
+  });
+
+  // Check mine collisions with bullets
+  bullets.getBullets().forEach(bullet => {
+    const hitMine = mines.checkBulletCollision(bullet.x, bullet.y);
+    if (hitMine) {
+      triggerMineExplosion(hitMine);
+    }
+  });
+
+  // Check mine collisions with local player
+  const hitMine = mines.checkPlayerCollision(localCursor.x, localCursor.y, SHIP_COLLISION_RADIUS);
+  if (hitMine && localCursor.health > 0) {
+    announcements.announceMineExplosion('You', 0);
+    triggerMineExplosion(hitMine);
+  }
+
+  // Check laser collisions - local player
   const mySocketId = socket.getSocketId();
+  if (mySocketId && lasers.checkCollision(localCursor.x, localCursor.y, SHIP_COLLISION_RADIUS, mySocketId)) {
+    const oldHealth = localCursor.health;
+    localCursor.health = Math.max(0, localCursor.health - WEAPONS[WeaponType.LASER].damage);
+    console.log(`🔥 Hit by laser! Health: ${localCursor.health}`);
+
+    if (localCursor.health > 0) {
+      particles.spawn(localCursor.x, localCursor.y, Math.random() * Math.PI * 2, '#00FF00', 5);
+    }
+  }
+
+  // Check collisions - local player (use socket ID to avoid hitting yourself)
   if (mySocketId && bullets.checkCollision(localCursor.x, localCursor.y, SHIP_COLLISION_RADIUS, mySocketId)) {
     const oldHealth = localCursor.health;
-    localCursor.health = Math.max(0, localCursor.health - BULLET_DAMAGE);
+    const weapon = weaponManager.getCurrentWeapon();
+    localCursor.health = Math.max(0, localCursor.health - weapon.damage);
     console.log(`💥 You were hit! Health: ${localCursor.health}`);
+
+    // Hit particles (not death)
+    if (localCursor.health > 0) {
+      particles.explode(localCursor.x, localCursor.y, localCursor.color, 100);
+      screenShake.shake(5, 100);
+    }
 
     // Death explosion!
     if (oldHealth > 0 && localCursor.health <= 0) {
       console.log('💀 You died!');
       explosions.explode(localCursor.x, localCursor.y, localCursor.color, 4);
-      particles.explode(localCursor.x, localCursor.y, localCursor.color, 1000); // WAY more particles!
+      particles.explode(localCursor.x, localCursor.y, localCursor.color, 1000);
+      screenShake.shake(25, 500);
 
-      // MASSIVE grid explosion shockwave - multiple rings at different radii
-      const explosionForce = 100; // MUCH stronger force
-      const rings = 5; // Multiple shockwave rings
+      // Death penalty
+      scoreManager.addPoints(mySocketId, -50);
+
+      // MASSIVE grid explosion shockwave
+      const explosionForce = 100;
+      const rings = 5;
       for (let ring = 0; ring < rings; ring++) {
-        const ringRadius = ring * 30; // 0, 30, 60, 90, 120 pixels
-        for (let angle = 0; angle < Math.PI * 2; angle += 0.1) { // More force points
+        const ringRadius = ring * 30;
+        for (let angle = 0; angle < Math.PI * 2; angle += 0.1) {
           const forceX = Math.cos(angle) * explosionForce;
           const forceY = Math.sin(angle) * explosionForce;
           const x = localCursor.x + Math.cos(angle) * ringRadius;
@@ -211,36 +413,60 @@ canvas.startRenderLoop(() => {
         }
       }
 
-      // Respawn after 10 seconds
+      // Respawn after 3 seconds
       setTimeout(() => {
-        localCursor.health = 100;
+        localCursor.health = 50;
         localCursor.x = window.innerWidth / 2;
         localCursor.y = window.innerHeight / 2;
         targetPosition.x = localCursor.x;
         targetPosition.y = localCursor.y;
         console.log('✨ You respawned!');
-      }, 10000);
+      }, 3000);
     }
   }
+
+  // Check laser collisions - remote players
+  cursors.getCursors().forEach((cursor, userId) => {
+    if (lasers.checkCollision(cursor.x, cursor.y, SHIP_COLLISION_RADIUS, userId)) {
+      const isDead = cursors.damageCursor(userId, WEAPONS[WeaponType.LASER].damage);
+      if (!isDead && cursor.health > 0) {
+        particles.spawn(cursor.x, cursor.y, Math.random() * Math.PI * 2, '#00FF00', 5);
+      }
+    }
+  });
 
   // Check collisions - remote players
   cursors.getCursors().forEach((cursor, userId) => {
     if (bullets.checkCollision(cursor.x, cursor.y, SHIP_COLLISION_RADIUS, userId)) {
       const oldHealth = cursor.health;
-      const isDead = cursors.damageCursor(userId, BULLET_DAMAGE);
+      const weapon = weaponManager.getCurrentWeapon();
+      const isDead = cursors.damageCursor(userId, weapon.damage);
+
+      // Hit particles (not death)
+      if (!isDead && cursor.health > 0) {
+        particles.explode(cursor.x, cursor.y, cursor.color, 100);
+        screenShake.shake(5, 100);
+      }
 
       // Death explosion for remote players!
       if (isDead && oldHealth > 0) {
         console.log(`💀 ${cursor.label} died!`);
         explosions.explode(cursor.x, cursor.y, cursor.color, 4);
-        particles.explode(cursor.x, cursor.y, cursor.color, 1000); // WAY more particles!
+        particles.explode(cursor.x, cursor.y, cursor.color, 1000);
+        screenShake.shake(25, 500);
 
-        // MASSIVE grid explosion shockwave - multiple rings at different radii
-        const explosionForce = 100; // MUCH stronger force
-        const rings = 5; // Multiple shockwave rings
+        // Award kill points
+        if (mySocketId) {
+          scoreManager.addKill(mySocketId, userId);
+          announcements.announceKill('You', cursor.label, 100);
+        }
+
+        // MASSIVE grid explosion shockwave
+        const explosionForce = 100;
+        const rings = 5;
         for (let ring = 0; ring < rings; ring++) {
-          const ringRadius = ring * 30; // 0, 30, 60, 90, 120 pixels
-          for (let angle = 0; angle < Math.PI * 2; angle += 0.1) { // More force points
+          const ringRadius = ring * 30;
+          for (let angle = 0; angle < Math.PI * 2; angle += 0.1) {
             const forceX = Math.cos(angle) * explosionForce;
             const forceY = Math.sin(angle) * explosionForce;
             const x = cursor.x + Math.cos(angle) * ringRadius;
@@ -252,16 +478,16 @@ canvas.startRenderLoop(() => {
         // Remove dead player (bot will respawn)
         if (userId === botId) {
           cursors.removeCursor(botId);
-          // Respawn bot after 10 seconds
+          // Respawn bot after 3 seconds
           setTimeout(() => {
             const centerX = window.innerWidth / 2;
             const centerY = window.innerHeight / 2;
-            botAngle = Math.random() * Math.PI * 2; // Random starting position
+            botAngle = Math.random() * Math.PI * 2;
             const botX = centerX + Math.cos(botAngle) * botRadius;
             const botY = centerY + Math.sin(botAngle) * botRadius;
             cursors.updateCursor(botId, botX, botY, '#FF00FF', 'Bot');
             console.log('🤖 Bot respawned!');
-          }, 10000);
+          }, 3000);
         }
       }
     }
@@ -273,8 +499,20 @@ canvas.startRenderLoop(() => {
   // Clean up stale cursors
   cursors.cleanupStaleCursors(5000);
 
-  // Render particles first (so they appear behind cursors)
+  // Get rendering context
   const ctx = canvas.getCanvas().getContext('2d')!;
+
+  // Apply screen shake
+  ctx.save();
+  screenShake.apply(ctx);
+
+  // Render mines
+  mines.render(ctx);
+
+  // Render power-ups
+  powerUps.render(ctx);
+
+  // Render particles (behind cursors)
   particles.render(ctx);
 
   // Render explosion rings
@@ -282,6 +520,9 @@ canvas.startRenderLoop(() => {
 
   // Render bullets
   bullets.render(ctx);
+
+  // Render laser beams
+  lasers.render(ctx);
 
   // Render local cursor (your own) with rotation and health - only if alive
   if (localCursor.health > 0) {
@@ -317,6 +558,24 @@ canvas.startRenderLoop(() => {
 
   // Draw grid overlay AFTER everything to pick up glow
   canvas.drawGridOverlay();
+
+  // Reset screen shake
+  ctx.restore();
+
+  // Render UI elements (not affected by screen shake)
+  scoreManager.renderUI(ctx, socket.getSocketId() || 'local');
+  announcements.render(ctx);
+
+  // Display current weapon
+  const currentWeapon = weaponManager.getCurrentWeapon();
+  ctx.save();
+  ctx.shadowBlur = 10;
+  ctx.shadowColor = currentWeapon.color;
+  ctx.fillStyle = currentWeapon.color;
+  ctx.font = 'bold 20px Arial';
+  ctx.textAlign = 'right';
+  ctx.fillText(`${currentWeapon.icon} ${currentWeapon.name}`, window.innerWidth - 30, window.innerHeight - 30);
+  ctx.restore();
 });
 
 // Get canvas element for mouse events

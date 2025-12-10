@@ -44,10 +44,9 @@ export class PowerUpSystem {
     const x = padding + Math.random() * (window.innerWidth - padding * 2);
     const y = padding + Math.random() * (window.innerHeight - padding * 2);
 
-    // Random weapon type (exclude machine gun)
+    // Random weapon type (exclude machine gun and sniper)
     const weaponTypes = [
       WeaponType.TRIPLE_SHOT,
-      WeaponType.SNIPER,
       WeaponType.SHOTGUN,
       WeaponType.ROCKET,
       WeaponType.LASER

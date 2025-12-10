@@ -75,7 +75,7 @@ export class CursorManager {
    * Call this every frame for smooth movement
    */
   update(): void {
-    this.cursors.forEach((cursor, userId) => {
+    this.cursors.forEach((cursor) => {
       // Store previous position for velocity calculation
       const prevX = cursor.x;
       const prevY = cursor.y;

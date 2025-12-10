@@ -10,6 +10,7 @@ interface Bullet {
   lifetime: number; // Time alive in frames
   color: string;
   ownerId: string; // Who shot this bullet
+  isRocket?: boolean; // Special rocket projectile
 }
 
 export class BulletSystem {
@@ -64,7 +65,7 @@ export class BulletSystem {
   /**
    * Spawn a bullet from a position in a direction
    */
-  shoot(x: number, y: number, angle: number, ownerId: string = 'local', color: string = '#00FFFF'): void {
+  shoot(x: number, y: number, angle: number, ownerId: string = 'local', color: string = '#00FFFF', isRocket: boolean = false): void {
     // Calculate velocity from angle
     const vx = Math.cos(angle) * this.bulletSpeed;
     const vy = Math.sin(angle) * this.bulletSpeed;
@@ -76,7 +77,8 @@ export class BulletSystem {
       vy,
       lifetime: 0,
       color,
-      ownerId
+      ownerId,
+      isRocket
     });
 
     // Remove old bullets if we exceed max
@@ -141,15 +143,37 @@ export class BulletSystem {
       // Calculate angle based on velocity
       const angle = Math.atan2(bullet.vy, bullet.vx);
 
-      // Use texture stamping (much faster than drawing geometry)
-      ctx.translate(bullet.x, bullet.y);
-      ctx.rotate(angle);
+      if (bullet.isRocket) {
+        // Render rocket as big glowing circle
+        ctx.save();
+        const pulse = 1 + Math.sin(bullet.lifetime * 0.3) * 0.2;
 
-      // Draw pre-rendered texture (adjusted for shorter bullet)
-      ctx.drawImage(this.bulletTexture, -9, -5);
+        // Outer glow
+        ctx.globalAlpha = 0.6;
+        ctx.shadowBlur = 40;
+        ctx.shadowColor = bullet.color;
+        ctx.fillStyle = bullet.color;
+        ctx.beginPath();
+        ctx.arc(bullet.x, bullet.y, 12 * pulse, 0, Math.PI * 2);
+        ctx.fill();
 
-      // Reset transforms
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
+        // Inner bright core
+        ctx.globalAlpha = 1;
+        ctx.shadowBlur = 25;
+        ctx.shadowColor = '#FFFFFF';
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.arc(bullet.x, bullet.y, 6 * pulse, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+      } else {
+        // Use texture stamping for regular bullets
+        ctx.translate(bullet.x, bullet.y);
+        ctx.rotate(angle);
+        ctx.drawImage(this.bulletTexture, -9, -5);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+      }
     });
 
     ctx.restore();

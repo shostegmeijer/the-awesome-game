@@ -5,7 +5,6 @@
 export enum WeaponType {
   MACHINE_GUN = 'machineGun',
   TRIPLE_SHOT = 'tripleShot',
-  SNIPER = 'sniper',
   SHOTGUN = 'shotgun',
   ROCKET = 'rocket',
   LASER = 'laser'
@@ -41,67 +40,54 @@ export const WEAPONS: Record<WeaponType, WeaponConfig> = {
     type: WeaponType.TRIPLE_SHOT,
     name: 'Triple Shot',
     color: '#FF00FF',
-    cooldown: 250,
-    damage: 12,
+    cooldown: 0, // One-time use
+    damage: 30,
     bulletSpeed: 14,
     bulletCount: 3,
     spread: 0.3,
     bulletLifetime: 120,
     icon: '⚡'
   },
-  [WeaponType.SNIPER]: {
-    type: WeaponType.SNIPER,
-    name: 'Sniper',
-    color: '#FFFF00',
-    cooldown: 800,
-    damage: 50,
-    bulletSpeed: 30,
-    bulletCount: 1,
-    spread: 0,
-    bulletLifetime: 80,
-    icon: '🎯'
-  },
   [WeaponType.SHOTGUN]: {
     type: WeaponType.SHOTGUN,
     name: 'Shotgun',
     color: '#FF6600',
-    cooldown: 500,
+    cooldown: 0, // One-time use
     damage: 10,
     bulletSpeed: 12,
-    bulletCount: 5,
-    spread: 0.5,
-    bulletLifetime: 60,
+    bulletCount: 20,
+    spread: 0.01,
+    bulletLifetime: 50,
     icon: '💥'
   },
   [WeaponType.ROCKET]: {
     type: WeaponType.ROCKET,
     name: 'Rocket',
     color: '#FF0000',
-    cooldown: 1000,
-    damage: 40,
-    bulletSpeed: 10,
+    cooldown: 0, // One-time use
+    damage: 60,
+    bulletSpeed: 6, // Slower
     bulletCount: 1,
     spread: 0,
-    bulletLifetime: 150,
+    bulletLifetime: 180, // Longer lifetime
     icon: '🚀'
   },
   [WeaponType.LASER]: {
     type: WeaponType.LASER,
     name: 'Laser',
     color: '#00FF00',
-    cooldown: 100,
-    damage: 8,
-    bulletSpeed: 25,
+    cooldown: 0, // One-time use, continuous beam
+    damage: 5, // Damage per frame
+    bulletSpeed: 0, // Not used for beam
     bulletCount: 1,
     spread: 0,
-    bulletLifetime: 100,
-    icon: '⚡'
+    bulletLifetime: 120, // 2 seconds at 60fps
+    icon: '🔥'
   }
 };
 
 export class WeaponManager {
   private currentWeapon: WeaponType = WeaponType.MACHINE_GUN;
-  private weaponTimer: number | null = null;
 
   /**
    * Get current weapon config
@@ -111,30 +97,30 @@ export class WeaponManager {
   }
 
   /**
-   * Set weapon (with optional duration for temporary power-ups)
+   * Set weapon (one-time use)
    */
-  setWeapon(type: WeaponType, duration?: number): void {
+  setWeapon(type: WeaponType): void {
     this.currentWeapon = type;
+  }
 
-    // Clear existing timer
-    if (this.weaponTimer !== null) {
-      clearTimeout(this.weaponTimer);
-      this.weaponTimer = null;
-    }
+  /**
+   * Reset to machine gun after using special weapon
+   */
+  resetToMachineGun(): void {
+    this.currentWeapon = WeaponType.MACHINE_GUN;
+  }
 
-    // Set timer to revert to machine gun
-    if (duration) {
-      this.weaponTimer = setTimeout(() => {
-        this.currentWeapon = WeaponType.MACHINE_GUN;
-        this.weaponTimer = null;
-      }, duration) as unknown as number;
-    }
+  /**
+   * Check if current weapon is machine gun
+   */
+  isMachineGun(): boolean {
+    return this.currentWeapon === WeaponType.MACHINE_GUN;
   }
 
   /**
    * Get bullets to spawn based on current weapon
    */
-  getBulletData(x: number, y: number, angle: number): Array<{ angle: number; speed: number }> {
+  getBulletData(_x: number, _y: number, angle: number): Array<{ angle: number; speed: number }> {
     const weapon = this.getCurrentWeapon();
     const bullets: Array<{ angle: number; speed: number }> = [];
 
@@ -152,15 +138,5 @@ export class WeaponManager {
     }
 
     return bullets;
-  }
-
-  /**
-   * Clear weapon timer on cleanup
-   */
-  destroy(): void {
-    if (this.weaponTimer !== null) {
-      clearTimeout(this.weaponTimer);
-      this.weaponTimer = null;
-    }
   }
 }

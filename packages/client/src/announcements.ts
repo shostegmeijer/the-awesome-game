@@ -101,7 +101,7 @@ export class AnnouncementSystem {
     const centerX = window.innerWidth / 2;
     let offsetY = window.innerHeight / 3;
 
-    this.announcements.forEach((announcement, index) => {
+    this.announcements.forEach((announcement) => {
       ctx.save();
 
       const alpha = Math.min(1, announcement.scale);
