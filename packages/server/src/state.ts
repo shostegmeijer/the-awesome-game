@@ -13,6 +13,8 @@ export interface UserState {
   radius: number; // Collision radius
   kills: number;
   deaths: number;
+  playerKey?: string; // INNSPIRE hub player key
+  scoreSubmitted: boolean; // Track if score has been submitted to hub
 }
 
 import { MAP_WIDTH, MAP_HEIGHT } from '@awesome-game/shared';
@@ -22,9 +24,9 @@ const users = new Map<string, UserState>();
 /**
  * Add a new user to the state
  */
-export function addUser(id: string): UserState {
+export function addUser(id: string, playerKey?: string): UserState {
   const color = generateColor();
-  const label = `User ${users.size + 1}`;
+  const label = playerKey ? `Player ${users.size + 1}` : `User ${users.size + 1}`;
   const user: UserState = {
     id,
     color,
@@ -37,10 +39,12 @@ export function addUser(id: string): UserState {
     weaponType: 'machineGun',
     radius: 25, // Standard ship radius
     kills: 0,
-    deaths: 0
+    deaths: 0,
+    playerKey,
+    scoreSubmitted: false
   };
   users.set(id, user);
-  console.log(`✅ User added: ${label} (${id}) - ${color}`);
+  console.log(`✅ User added: ${label} (${id}) ${playerKey ? `[${playerKey}]` : ''} - ${color}`);
   return user;
 }
 
@@ -128,6 +132,40 @@ export function addDeath(id: string): number {
     return user.deaths;
   }
   return 0;
+}
+
+/**
+ * Get leaderboard sorted by score (kills - deaths)
+ */
+export function getLeaderboard(): Array<{ userId: string; score: number; user: UserState }> {
+  const leaderboard = Array.from(users.entries())
+    .map(([userId, user]) => ({
+      userId,
+      score: user.kills * 100 - user.deaths * 50, // Same scoring as client
+      user
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  return leaderboard;
+}
+
+/**
+ * Get user rank (1-based)
+ */
+export function getUserRank(userId: string): number {
+  const leaderboard = getLeaderboard();
+  const index = leaderboard.findIndex(entry => entry.userId === userId);
+  return index >= 0 ? index + 1 : 0;
+}
+
+/**
+ * Mark score as submitted for a user
+ */
+export function markScoreSubmitted(id: string): void {
+  const user = users.get(id);
+  if (user) {
+    user.scoreSubmitted = true;
+  }
 }
 
 /**

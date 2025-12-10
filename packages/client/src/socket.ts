@@ -19,8 +19,10 @@ type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 export class SocketManager {
   private socket: TypedSocket;
 
-  constructor(serverUrl: string) {
-    this.socket = io(serverUrl) as TypedSocket;
+  constructor(serverUrl: string, playerKey?: string) {
+    this.socket = io(serverUrl, {
+      query: { playerKey }
+    }) as TypedSocket;
 
     // Connection event listeners
     this.socket.on('connect', () => {

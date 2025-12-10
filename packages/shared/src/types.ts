@@ -158,6 +158,7 @@ export interface ServerToClientEvents {
   'laser:spawn': (data: LaserSpawnPayload) => void;
   'player:respawn': (data: PlayerRespawnPayload) => void;
   'player:killed': (data: PlayerKilledPayload) => void;
+  'player:info': (data: PlayerInfoPayload) => void;
 }
 
 export interface PlayerKilledPayload {
@@ -172,6 +173,12 @@ export interface PlayerRespawnPayload {
   x: number;
   y: number;
   respawnTime: number; // Timestamp when respawn happens
+}
+
+export interface PlayerInfoPayload {
+  userId: string;
+  label: string;
+  color: string;
 }
 
 export interface ClientToServerEvents {

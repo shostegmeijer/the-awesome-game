@@ -7,11 +7,12 @@ import {
   MAP_WIDTH,
   MAP_HEIGHT
 } from '@awesome-game/shared';
-import { addUser, removeUser, updateCursor, getAllUsers, updateHealth, addKill, addDeath } from './state.js';
+import { addUser, removeUser, updateCursor, getAllUsers, updateHealth, addKill, addDeath, getUserRank, markScoreSubmitted } from './state.js';
 import { MineSystem } from './mines.js';
 import { PowerUpSystem } from './powerups.js';
 import { BulletSystem } from './bullets.js';
 import { LaserSystem } from './lasers.js';
+import { submitScoreToHub, calculatePlacementScore, getPlayerName } from './hub-api.js';
 
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents>;
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
@@ -123,11 +124,29 @@ export function initializeSocketHandlers(io: TypedServer): void {
 
   }, 16); // 16ms = ~60 updates per second
 
-  io.on('connection', (socket: TypedSocket) => {
-    console.log(`🔌 User connected: ${socket.id} `);
+  io.on('connection', async (socket: TypedSocket) => {
+    // Extract playerKey from socket handshake query
+    const playerKey = socket.handshake.query.playerKey as string | undefined;
+    console.log(`🔌 User connected: ${socket.id}${playerKey ? ` [PlayerKey: ${playerKey}]` : ''}`);
 
-    // Add user to state
-    const user = addUser(socket.id);
+    // Add user to state with playerKey
+    const user = addUser(socket.id, playerKey);
+
+    // Fetch real player name from hub if playerKey is provided
+    if (playerKey) {
+      const playerName = await getPlayerName(playerKey);
+      if (playerName) {
+        user.label = playerName;
+        console.log(`✅ Player name fetched: ${playerName} (${playerKey})`);
+      }
+    }
+
+    // Send player their own info (with updated name)
+    socket.emit('player:info', {
+      userId: user.id,
+      label: user.label,
+      color: user.color
+    });
 
     // Notify other clients about the new user
     socket.broadcast.emit('user:joined', {
@@ -234,8 +253,25 @@ export function initializeSocketHandlers(io: TypedServer): void {
     });
 
     // Handle disconnect
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
+      const user = getAllUsers().get(socket.id);
       console.log(`🔌 User disconnected: ${socket.id} `);
+
+      // Submit score to hub if player has a playerKey and hasn't submitted yet
+      if (user && user.playerKey && !user.scoreSubmitted) {
+        const rank = getUserRank(socket.id);
+        const totalPlayers = getAllUsers().size;
+        const hubScore = calculatePlacementScore(rank, totalPlayers);
+
+        console.log(`📊 Player stats - Rank: ${rank}/${totalPlayers}, Kills: ${user.kills}, Deaths: ${user.deaths}, Hub Score: ${hubScore}`);
+
+        const success = await submitScoreToHub(user.playerKey, user.label, hubScore);
+        if (success) {
+          markScoreSubmitted(socket.id);
+          console.log(`✅ Score submitted for ${user.label} (${user.playerKey}): ${hubScore}/100`);
+        }
+      }
+
       removeUser(socket.id);
       io.emit('user:left', { userId: socket.id });
     });

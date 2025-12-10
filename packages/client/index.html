@@ -3,9 +3,135 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Multiplayer Cursor Game</title>
+  <title>Geometry - Multiplayer Combat</title>
+  <style>
+    #welcome-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.95);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      color: white;
+      font-family: Arial, sans-serif;
+    }
+
+    #welcome-overlay.hidden {
+      display: none;
+    }
+
+    .welcome-title {
+      font-size: 48px;
+      font-weight: bold;
+      color: #00FFFF;
+      text-shadow: 0 0 20px #00FFFF;
+      margin-bottom: 20px;
+    }
+
+    .welcome-subtitle {
+      font-size: 20px;
+      color: #FFFFFF;
+      margin-bottom: 40px;
+      text-align: center;
+      max-width: 600px;
+      line-height: 1.6;
+    }
+
+    .player-key-container {
+      background: rgba(0, 255, 255, 0.1);
+      border: 2px solid #00FFFF;
+      border-radius: 10px;
+      padding: 30px 50px;
+      margin-bottom: 40px;
+      box-shadow: 0 0 30px rgba(0, 255, 255, 0.3);
+    }
+
+    .player-key-label {
+      font-size: 14px;
+      color: #AAAAAA;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+
+    .player-key {
+      font-size: 36px;
+      font-weight: bold;
+      color: #00FFFF;
+      font-family: 'Courier New', monospace;
+      text-shadow: 0 0 10px #00FFFF;
+    }
+
+    .welcome-instructions {
+      font-size: 16px;
+      color: #CCCCCC;
+      margin-bottom: 30px;
+      text-align: center;
+      line-height: 1.8;
+    }
+
+    .start-button {
+      background: #00FFFF;
+      color: #000000;
+      border: none;
+      padding: 15px 60px;
+      font-size: 20px;
+      font-weight: bold;
+      border-radius: 5px;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      transition: all 0.3s;
+      box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+    }
+
+    .start-button:hover {
+      background: #00CCCC;
+      box-shadow: 0 0 30px rgba(0, 255, 255, 0.8);
+      transform: translateY(-2px);
+    }
+
+    .warning-text {
+      color: #FFAA00;
+      font-size: 14px;
+      margin-top: 20px;
+      text-align: center;
+    }
+  </style>
 </head>
 <body>
+  <div id="welcome-overlay">
+    <div class="welcome-title">GEOMETRY</div>
+    <div class="welcome-subtitle">
+      Welcome to the INNSPIRE Mini Game Hackathon!<br>
+      Free-for-all multiplayer combat arena
+    </div>
+
+    <div class="player-key-container">
+      <div class="player-key-label">Your Player Key</div>
+      <div class="player-key" id="player-key-display">Loading...</div>
+      <div class="player-key-label" style="margin-top: 15px;">Player Name</div>
+      <div class="player-key" id="player-name-display" style="display: none; font-size: 28px;">Loading...</div>
+    </div>
+
+    <div class="welcome-instructions">
+      🎮 <strong>Controls:</strong> Move with mouse • Press SPACE to shoot<br>
+      📊 <strong>Scoring:</strong> Get kills to rank higher • Score auto-submits on disconnect<br>
+      🎯 <strong>Objective:</strong> Rank as high as possible before leaving!
+    </div>
+
+    <button class="start-button" id="start-game-btn">START GAME</button>
+
+    <div class="warning-text" id="no-key-warning" style="display: none;">
+      ⚠️ No player key provided - playing in standalone mode
+    </div>
+  </div>
+
   <canvas id="game-canvas"></canvas>
   <div id="status" class="status">Connecting...</div>
   <script type="module" src="/src/main.ts"></script>

@@ -18,12 +18,33 @@ import './styles.css';
 
 console.log('🎮 Initializing multiplayer cursor game...');
 
-// Initialize canvas
+// Get player key from URL
+const urlParams = new URLSearchParams(window.location.search);
+const playerKey = urlParams.get('playerKey') || undefined;
+
+// Setup welcome overlay
+const welcomeOverlay = document.getElementById('welcome-overlay');
+const playerKeyDisplay = document.getElementById('player-key-display');
+const startGameBtn = document.getElementById('start-game-btn');
+const noKeyWarning = document.getElementById('no-key-warning');
+
+// Display player key or warning
+if (playerKey) {
+  playerKeyDisplay!.textContent = playerKey;
+} else {
+  playerKeyDisplay!.textContent = 'STANDALONE MODE';
+  noKeyWarning!.style.display = 'block';
+}
+
+// Track if game has started
+let gameStarted = false;
+
+// Initialize canvas (but don't start game loop yet)
 const canvas = new CanvasManager('game-canvas');
 
 // Initialize socket connection (works both locally and on network)
 const serverUrl = `http://${window.location.hostname}:3000`;
-const socket = new SocketManager(serverUrl);
+const socket = new SocketManager(serverUrl, playerKey);
 console.log(`🔌 Connecting to server at ${serverUrl}`);
 
 // Initialize cursor manager
@@ -68,6 +89,13 @@ const SHIP_COLLISION_RADIUS = 25; // Pixels
 const mySocketId = socket.getSocketId();
 if (mySocketId) {
   scoreManager.initPlayer(mySocketId, 'You');
+}
+
+// Log hub integration status
+if (playerKey) {
+  console.log('🎮 Hub integration enabled - scores will be auto-submitted on disconnect');
+} else {
+  console.warn('⚠️ No playerKey provided - playing in standalone mode');
 }
 
 // Helper function to trigger mine explosion with chain reactions - REMOVED (Server handles this)
@@ -139,6 +167,23 @@ controls.onAction('shoot', () => {
 });
 
 // Socket event handlers
+socket.on('player:info', (data) => {
+  console.log(`👤 Your player info: ${data.label}`);
+  // Update local player label with fetched name from hub
+  localCursor.label = data.label;
+  localCursor.color = data.color;
+  // Update score manager with real name
+  if (mySocketId) {
+    scoreManager.initPlayer(mySocketId, data.label);
+  }
+  // Update welcome screen if still visible
+  const playerNameDisplay = document.getElementById('player-name-display');
+  if (playerNameDisplay && data.label !== 'You') {
+    playerNameDisplay.textContent = data.label;
+    playerNameDisplay.style.display = 'block';
+  }
+});
+
 socket.onUserJoined((data) => {
   console.log(`👋 User joined: ${data.label}`);
   // Register cursor immediately so we have the label/color
@@ -334,8 +379,31 @@ window.addEventListener('resize', () => {
   camera.resize(window.innerWidth, window.innerHeight);
 });
 
+// Function to start the game
+function startGame() {
+  gameStarted = true;
+  welcomeOverlay!.classList.add('hidden');
+  console.log('🎮 Game started!');
+}
+
+// Start button click handler
+startGameBtn!.addEventListener('click', () => {
+  startGame();
+});
+
+// Also allow Enter key to start
+window.addEventListener('keydown', (e: KeyboardEvent) => {
+  if (e.key === 'Enter' && !gameStarted) {
+    startGame();
+  }
+});
+
 // Start render loop
 canvas.startRenderLoop(() => {
+  // Don't update game if not started yet
+  if (!gameStarted) {
+    return;
+  }
   // Update camera to follow local player
   camera.follow(localCursor.x, localCursor.y);
 
@@ -775,3 +843,6 @@ canvasElement.addEventListener('mousemove', (e: MouseEvent) => {
 
 console.log('✅ App initialized - move your mouse and press SPACE to shoot!');
 console.log('🎮 Controls:', controls.getBindings());
+if (playerKey) {
+  console.log('📊 Score will be auto-submitted to INNSPIRE hub on disconnect');
+}
