@@ -42,9 +42,30 @@ export function initializeSocketHandlers(io: TypedServer): void {
         attackerId: attacker.id,
         attackerName: attacker.label
       });
+
+      // Emit updated stats for both players
+      io.emit('stats:update', {
+        userId: user.id,
+        kills: user.kills,
+        deaths: user.deaths
+      });
+      if (user.id !== attacker.id) {
+        io.emit('stats:update', {
+          userId: attacker.id,
+          kills: attacker.kills,
+          deaths: attacker.deaths
+        });
+      }
+
       console.log(`[DEATH] ${user.label} killed by ${attacker.label} `);
     } else if (user) {
       addDeath(user.id);
+      // Emit updated stats
+      io.emit('stats:update', {
+        userId: user.id,
+        kills: user.kills,
+        deaths: user.deaths
+      });
       console.log(`[DEATH] ${user.label} died`);
     }
 
@@ -94,7 +115,7 @@ export function initializeSocketHandlers(io: TypedServer): void {
   const powerUpSystem = new PowerUpSystem(io);
   const bulletSystem = new BulletSystem();
   const botSystem = new BotSystem(io, bulletSystem);
-  const laserSystem = new LaserSystem(mineSystem);
+  const laserSystem = new LaserSystem(mineSystem, io);
 
   // Start server-side game loop (60 TPS)
   setInterval(() => {
@@ -177,6 +198,9 @@ export function initializeSocketHandlers(io: TypedServer): void {
       const BOT_RADIUS = 25;
       const bots = getAllBots();
       for (const bot of bots) {
+        if (bullet.userId === bot.id) continue; // bots can't shoot themselves
+        if (bot.health <= 0) continue; // skip dead bots
+
         const dx = bullet.x - bot.x;
         const dy = bullet.y - bot.y;
         const dist2 = dx * dx + dy * dy;
@@ -185,6 +209,29 @@ export function initializeSocketHandlers(io: TypedServer): void {
           const newHealth = Math.max(0, bot.health - 10);
           setBotHealth(bot.id, newHealth);
           io.emit('health:update', { userId: bot.id, health: newHealth });
+
+          // Award kill if bot died (transition from alive to dead)
+          if (newHealth <= 0) {
+            const shooter = getAllUsers().get(bullet.userId);
+            if (shooter) {
+              addKill(bullet.userId);
+              io.emit('kill', {
+                killerId: bullet.userId,
+                killerName: shooter.label,
+                victimId: bot.id,
+                victimName: bot.label,
+                points: 100
+              });
+              // Emit updated stats to all clients
+              io.emit('stats:update', {
+                userId: bullet.userId,
+                kills: shooter.kills,
+                deaths: shooter.deaths
+              });
+              console.log(`💀 ${shooter.label} killed bot ${bot.label}`);
+            }
+          }
+
           return;
         }
       }
@@ -212,7 +259,10 @@ export function initializeSocketHandlers(io: TypedServer): void {
     socket.emit('player:info', {
       userId: user.id,
       label: user.label,
-      color: user.color
+      color: user.color,
+      kills: user.kills,
+      deaths: user.deaths,
+      health: user.health
     });
 
     // Notify other clients about the new user (skipped; cursors:sync will reflect state)
@@ -238,7 +288,6 @@ export function initializeSocketHandlers(io: TypedServer): void {
       cursors[bot.id] = {
         x: bot.x,
         y: bot.y,
-        rotation: 0,
         color: '#FF00FF',
         label: bot.label,
         health: bot.health,
@@ -422,13 +471,30 @@ export function initializeSocketHandlers(io: TypedServer): void {
 
     socket.on('admin:kickPlayer', ({ token, id }: { token: string, id: string }) => {
       if (!isAuthorized(token)) return socket.emit('admin:error', { error: 'Unauthorized' });
+
+      // Check if it's a user or bot
+      const user = getAllUsers().get(id);
+      const bot = getAllBots().find(b => b.id === id);
+
+      if (bot) {
+        console.log(`⚠️ Cannot kick bot ${bot.label} (${id}) - use Remove Bot instead`);
+        return socket.emit('admin:kickPlayer:error', { error: 'Cannot kick bots, use Remove Bot button', id });
+      }
+
+      if (!user) {
+        console.log(`⚠️ Player ${id} not found in users list (stale entry)`);
+        return socket.emit('admin:kickPlayer:error', { error: 'Player not found (already disconnected?)', id });
+      }
+
       const targetSocket = io.sockets.sockets.get(id);
       if (!targetSocket) {
-        return socket.emit('admin:kickPlayer:error', { error: 'Player not found', id });
+        console.log(`⚠️ Socket ${id} not found for user ${user.label} (stale connection)`);
+        // Remove from users list since socket is gone
+        removeUser(id);
+        return socket.emit('admin:kickPlayer:error', { error: 'Socket not found (cleaning up stale entry)', id });
       }
-      const user = getAllUsers().get(id);
-      const playerName = user?.label || 'Unknown';
-      console.log(`🚪 Admin kicked player: ${playerName} (${id})`);
+
+      console.log(`🚪 Admin kicked player: ${user.label} (${id})`);
       targetSocket.disconnect(true);
       socket.emit('admin:kickPlayer:ok', { kicked: id });
     });

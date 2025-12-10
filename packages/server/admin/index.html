@@ -95,6 +95,7 @@
             <th>Y</th>
             <th>Health</th>
             <th>Points</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody id="playersBody"></tbody>
@@ -163,6 +164,10 @@
         adminSocket.emit('admin:removeBot', { token: getToken(), id });
       }
 
+      function kickPlayer(id) {
+        adminSocket.emit('admin:kickPlayer', { token: getToken(), id });
+      }
+
       // Event handlers
       function showAuthedUI() {
         document.getElementById('playersHeader').classList.remove('hidden');
@@ -189,9 +194,10 @@
         tbody.innerHTML = '';
         for (const p of players) {
           const tr = document.createElement('tr');
+          const kickBtn = `<button data-id="${p.id}" class="kickPlayer">Kick</button>`;
           tr.innerHTML = `<td>${p.id}</td><td>${p.label}</td><td>${p.x.toFixed(0)}</td><td>${p.y.toFixed(0)}</td><td>${
             p.health
-          }</td><td>${p.points ?? 0}</td>`;
+          }</td><td>${p.points ?? 0}</td><td>${kickBtn}</td>`;
           tbody.appendChild(tr);
         }
       });
@@ -215,6 +221,16 @@
         document.getElementById('playerStartingHealth').value = s.playerStartingHealth;
       });
 
+      adminSocket.on('admin:kickPlayer:ok', ({ kicked }) => {
+        console.log('✅ Player kicked:', kicked);
+        requestPlayers(); // Refresh player list
+      });
+
+      adminSocket.on('admin:kickPlayer:error', ({ error }) => {
+        console.error('❌ Kick failed:', error);
+        alert('Failed to kick player: ' + error);
+      });
+
       // Wire UI
       document.getElementById('loginBtn').addEventListener('click', () => {
         const pw = document.getElementById('password').value;
@@ -223,6 +239,12 @@
       document.getElementById('refreshPlayers').addEventListener('click', () => requestPlayers());
       document.getElementById('refreshBots').addEventListener('click', () => requestBots());
       document.getElementById('addBot').addEventListener('click', () => addBot());
+      document.getElementById('playersBody').addEventListener('click', (e) => {
+        const tgt = e.target;
+        if (tgt && tgt.classList.contains('kickPlayer')) {
+          kickPlayer(tgt.getAttribute('data-id'));
+        }
+      });
       document.getElementById('botsBody').addEventListener('click', (e) => {
         const tgt = e.target;
         if (tgt && tgt.classList.contains('removeBot')) {

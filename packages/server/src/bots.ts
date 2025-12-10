@@ -40,8 +40,14 @@ export class BotSystem {
       bots = getAllBots();
     }
 
-    // Movement params
-    const mapWidth = MAP_WIDTH, mapHeight = MAP_WIDTH, padding = 50;
+    // Movement params - use centered coordinates like players
+    const padding = 50;
+    const halfWidth = MAP_WIDTH / 2;
+    const halfHeight = MAP_WIDTH / 2; // Note: MAP_HEIGHT would be better but keeping MAP_WIDTH for now
+    const minX = -halfWidth + padding;
+    const maxX = halfWidth - padding;
+    const minY = -halfHeight + padding;
+    const maxY = halfHeight - padding;
     const baseSpeed = s.botSpeed; // admin-controlled
 
       bots.forEach(bot => {
@@ -52,9 +58,9 @@ export class BotSystem {
             anyBot.respawnAt = Date.now() + 3000; // 3s respawn delay
           } else if (Date.now() >= anyBot.respawnAt) {
             setBotHealth(bot.id, s.botHealth);
-            // Reposition safely within map on respawn
-            const rx = padding + Math.random() * (mapWidth - padding * 2);
-            const ry = padding + Math.random() * (mapHeight - padding * 2);
+            // Reposition safely within map on respawn (centered coordinates)
+            const rx = (Math.random() - 0.5) * (MAP_WIDTH - padding * 2);
+            const ry = (Math.random() - 0.5) * (MAP_WIDTH - padding * 2);
             setBotPosition(bot.id, rx, ry);
             anyBot.respawnAt = null;
           }
@@ -68,19 +74,19 @@ export class BotSystem {
         const newHeading = bot.heading + (Math.random() - 0.5) * 0.8; // stronger turn
         setBotHeading(bot.id, newHeading);
       }
-      // Clamp current position defensively inside map before moving
-      let cx = Math.min(Math.max(bot.x, padding), mapWidth - padding);
-      let cy = Math.min(Math.max(bot.y, padding), mapHeight - padding);
+      // Clamp current position defensively inside map before moving (centered coordinates)
+      let cx = Math.min(Math.max(bot.x, minX), maxX);
+      let cy = Math.min(Math.max(bot.y, minY), maxY);
       let nx = cx + Math.cos(bot.heading) * speedJitter;
       let ny = cy + Math.sin(bot.heading) * speedJitter;
-      // Bounce from walls
-      if (nx < padding || nx > mapWidth - padding) {
+      // Bounce from walls (centered coordinates)
+      if (nx < minX || nx > maxX) {
         setBotHeading(bot.id, Math.PI - bot.heading);
-        nx = Math.min(Math.max(nx, padding), mapWidth - padding);
+        nx = Math.min(Math.max(nx, minX), maxX);
       }
-      if (ny < padding || ny > mapHeight - padding) {
+      if (ny < minY || ny > maxY) {
         setBotHeading(bot.id, -bot.heading);
-        ny = Math.min(Math.max(ny, padding), mapHeight - padding);
+        ny = Math.min(Math.max(ny, minY), maxY);
       }
       setBotPosition(bot.id, nx, ny);
 
@@ -89,7 +95,6 @@ export class BotSystem {
           userId: bot.id,
           x: nx,
           y: ny,
-          rotation: 0,
           color: '#00aaff',
           label: bot.label,
           health: bot.health,

@@ -93,7 +93,7 @@ export class CursorManager {
       cursor.x += dx * followSpeed;
       cursor.y += dy * followSpeed;
 
-      // Calculate rotation based on movement direction
+      // Calculate rotation based on movement direction for all cursors
       if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
         const targetRotation = Math.atan2(dy, dx);
 

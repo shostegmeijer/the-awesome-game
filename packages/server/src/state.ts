@@ -142,12 +142,13 @@ let botLabelCounter = 0;
 
 export function addBot(initialHealth: number = 50): BotState {
   const id = `bot-${Date.now()}-${Math.floor(Math.random()*10000)}`;
-  const mapWidth = 2000, mapHeight = 2000, padding = 100;
-  const x = padding + Math.random() * (mapWidth - padding * 2);
-  const y = padding + Math.random() * (mapHeight - padding * 2);
+  const padding = 100;
+  // Use centered coordinates like players (-MAP_WIDTH/2 to MAP_WIDTH/2)
+  const x = (Math.random() - 0.5) * (MAP_WIDTH - padding * 2);
+  const y = (Math.random() - 0.5) * (MAP_HEIGHT - padding * 2);
   const bot: BotState = { id, label: `Bot ${++botLabelCounter}`, x, y, health: initialHealth, heading: Math.random() * Math.PI * 2 };
   bots.set(id, bot);
-  console.log(`🤖 Bot added: ${bot.label} (${bot.id})`);
+  console.log(`🤖 Bot added: ${bot.label} (${bot.id}) at (${Math.round(x)}, ${Math.round(y)})`);
   return bot;
 }
 
@@ -187,7 +188,7 @@ export interface GameSettings {
 let settings: GameSettings = {
   botSpeed: 4.0,
   botCount: 5,
-  botHealth: 50,
+  botHealth: 30,
   playerStartingHealth: 100
 };
 

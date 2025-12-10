@@ -153,6 +153,15 @@ export interface KnockbackPayload {
   vy: number;
 }
 
+// Payload for kill event
+export interface KillPayload {
+  killerId: string;
+  killerName: string;
+  victimId: string;
+  victimName: string;
+  points: number;
+}
+
 // Socket.io event map for type safety
 export interface ServerToClientEvents {
   'reconnect': (attemptNumber: number) => void;
@@ -163,6 +172,9 @@ export interface ServerToClientEvents {
   'cursor:update': (data: CursorUpdatePayload) => void;
   'bullet:spawn': (data: BulletUpdatePayload) => void;
   'health:update': (data: HealthUpdatePayload) => void;
+  'kill': (data: KillPayload) => void;
+  'knockback': (data: KnockbackPayload) => void;
+  'stats:update': (data: StatsUpdatePayload) => void;
 
   // New events
   'mine:spawn': (data: MineData) => void;
@@ -212,6 +224,15 @@ export interface PlayerInfoPayload {
   userId: string;
   label: string;
   color: string;
+  kills: number;
+  deaths: number;
+  health: number;
+}
+
+export interface StatsUpdatePayload {
+  userId: string;
+  kills: number;
+  deaths: number;
 }
 
 export interface ClientToServerEvents {

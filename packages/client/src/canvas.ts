@@ -99,9 +99,11 @@ export class CanvasManager {
   drawCursor(x: number, y: number, color: string, label: string, rotation: number = 0, health: number = 100, type: 'player' | 'bot'): void {
     // Render based on cursor type
     if (type === 'bot') {
-      // Hexagon for bots
+      // Hexagon for bots with rotation
       const r = 20;
       this.ctx.save();
+      this.ctx.translate(x, y);
+      this.ctx.rotate(rotation); // Apply bot rotation
       this.ctx.shadowBlur = 12;
       this.ctx.shadowColor = color;
       this.ctx.strokeStyle = color;
@@ -109,8 +111,8 @@ export class CanvasManager {
       this.ctx.beginPath();
       for (let i = 0; i < 6; i++) {
         const angle = (Math.PI / 3) * i; // 0,60,...300 degrees
-        const px = x + Math.cos(angle) * r;
-        const py = y + Math.sin(angle) * r;
+        const px = Math.cos(angle) * r; // Draw centered at origin
+        const py = Math.sin(angle) * r;
         if (i === 0) this.ctx.moveTo(px, py); else this.ctx.lineTo(px, py);
       }
       this.ctx.closePath();

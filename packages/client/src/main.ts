@@ -236,6 +236,7 @@ socket.onCursorUpdate((data) => {
     console.warn('⚠️ Received cursor:update for self - ignoring');
     return;
   }
+
   cursors.updateCursor(
     data.userId,
     data.x,
@@ -278,6 +279,17 @@ socket.on('player:killed', (data) => {
     // Someone else killed someone else
     announcements.show(`${data.attackerName} 🔫 ${data.victimName}`, '', '#FFFFFF', 2000);
   }
+});
+
+// Handle stats updates from server
+socket.on('stats:update', (data) => {
+  const player = scoreManager['scores'].get(data.userId);
+  if (player) {
+    player.kills = data.kills;
+    player.deaths = data.deaths;
+    player.score = data.kills * 100 - data.deaths * 50;
+  }
+  console.log(`📊 Stats updated: ${data.userId} - K:${data.kills} D:${data.deaths}`);
 });
 
 // Handle bullet spawn from network

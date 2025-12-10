@@ -1,5 +1,7 @@
-import { getAllUsers } from './state.js';
+import { getAllUsers, getAllBots, setBotHealth, updateHealth, applyKnockback, addKill } from './state.js';
 import { MineSystem } from './mines.js';
+import { Server } from 'socket.io';
+import { ClientToServerEvents, ServerToClientEvents } from '@awesome-game/shared';
 
 interface ActiveLaser {
     userId: string;
@@ -7,12 +9,16 @@ interface ActiveLaser {
     duration: number; // Frames remaining
 }
 
+type TypedServer = Server<ClientToServerEvents, ServerToClientEvents>;
+
 export class LaserSystem {
     private lasers: ActiveLaser[] = [];
     private mineSystem: MineSystem;
+    private io: TypedServer;
 
-    constructor(mineSystem: MineSystem) {
+    constructor(mineSystem: MineSystem, io: TypedServer) {
         this.mineSystem = mineSystem;
+        this.io = io;
     }
 
     /**
@@ -40,10 +46,38 @@ export class LaserSystem {
     }
 
     /**
+     * Check if a point is hit by a laser beam
+     */
+    private checkLaserHit(beamX: number, beamY: number, beamAngle: number, beamLength: number, targetX: number, targetY: number, targetRadius: number): boolean {
+        // Calculate beam end point
+        const endX = beamX + Math.cos(beamAngle) * beamLength;
+        const endY = beamY + Math.sin(beamAngle) * beamLength;
+
+        // Calculate distance from point to line segment
+        const dx = endX - beamX;
+        const dy = endY - beamY;
+        const lengthSquared = dx * dx + dy * dy;
+
+        if (lengthSquared === 0) return false;
+
+        const t = Math.max(0, Math.min(1, ((targetX - beamX) * dx + (targetY - beamY) * dy) / lengthSquared));
+
+        const closestX = beamX + t * dx;
+        const closestY = beamY + t * dy;
+
+        const distSquared = (targetX - closestX) * (targetX - closestX) + (targetY - closestY) * (targetY - closestY);
+
+        return distSquared <= targetRadius * targetRadius;
+    }
+
+    /**
      * Update lasers and check collisions
      */
     update(): void {
         const users = getAllUsers();
+        const bots = getAllBots();
+        const LASER_LENGTH = 2000;
+        const LASER_DAMAGE = 2; // Per tick
 
         for (let i = this.lasers.length - 1; i >= 0; i--) {
             const laser = this.lasers[i];
@@ -59,11 +93,52 @@ export class LaserSystem {
             laser.angle = user.rotation;
 
             // Check collisions with mines
-            // Beam origin is user position
-            const hitMineIds = this.mineSystem.checkLaserCollision(user.x, user.y, laser.angle, 2000);
-
+            const hitMineIds = this.mineSystem.checkLaserCollision(user.x, user.y, laser.angle, LASER_LENGTH);
             hitMineIds.forEach(mineId => {
                 this.mineSystem.explodeMine(mineId, laser.userId);
+            });
+
+            // Check collisions with other players
+            users.forEach((target, targetId) => {
+                if (targetId === laser.userId) return; // Don't hit self
+                if (target.health <= 0) return; // Skip dead players
+
+                if (this.checkLaserHit(user.x, user.y, laser.angle, LASER_LENGTH, target.x, target.y, 25)) {
+                    const newHealth = Math.max(0, target.health - LASER_DAMAGE);
+                    updateHealth(targetId, newHealth);
+                    this.io.emit('health:update', { userId: targetId, health: newHealth });
+                }
+            });
+
+            // Check collisions with bots
+            bots.forEach((bot) => {
+                if (bot.health <= 0) return; // Skip dead bots
+
+                if (this.checkLaserHit(user.x, user.y, laser.angle, LASER_LENGTH, bot.x, bot.y, 25)) {
+                    const newHealth = Math.max(0, bot.health - LASER_DAMAGE);
+                    setBotHealth(bot.id, newHealth);
+                    this.io.emit('health:update', { userId: bot.id, health: newHealth });
+
+                    // Award kill if bot died
+                    if (newHealth <= 0 && bot.health > 0) {
+                        const shooter = users.get(laser.userId);
+                        if (shooter) {
+                            addKill(laser.userId);
+                            this.io.emit('kill', {
+                                killerId: laser.userId,
+                                killerName: shooter.label,
+                                victimId: bot.id,
+                                victimName: bot.label,
+                                points: 100
+                            });
+                            this.io.emit('stats:update', {
+                                userId: laser.userId,
+                                kills: shooter.kills,
+                                deaths: shooter.deaths
+                            });
+                        }
+                    }
+                }
             });
 
             // Decrease duration
