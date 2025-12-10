@@ -1,3 +1,6 @@
+import { DEFAULT_SHIP_SHAPE, drawShipShape, type ShipShape } from './shapes.js';
+import { ReactiveGrid } from './grid.js';
+
 /**
  * Canvas manager for rendering cursors
  */
@@ -5,6 +8,8 @@ export class CanvasManager {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private animationId: number = 0;
+  private shipShape: ShipShape = DEFAULT_SHIP_SHAPE;
+  private grid: ReactiveGrid;
 
   constructor(canvasId: string) {
     const element = document.getElementById(canvasId);
@@ -19,6 +24,9 @@ export class CanvasManager {
     }
     this.ctx = context;
 
+    // Initialize reactive grid
+    this.grid = new ReactiveGrid(window.innerWidth, window.innerHeight);
+
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -29,6 +37,7 @@ export class CanvasManager {
   private resize(): void {
     this.canvas.width = window.innerWidth;
     this.canvas.height = window.innerHeight;
+    this.grid.resize(window.innerWidth, window.innerHeight);
   }
 
   /**
@@ -40,8 +49,9 @@ export class CanvasManager {
       this.ctx.fillStyle = '#000';
       this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-      // Draw grid background (Geometry Wars style)
-      this.drawGrid();
+      // Update and draw reactive grid
+      this.grid.update();
+      this.grid.render(this.ctx);
 
       // Call render function
       renderFn();
@@ -53,30 +63,17 @@ export class CanvasManager {
   }
 
   /**
-   * Draw Geometry Wars style grid background
+   * Get the reactive grid instance
    */
-  private drawGrid(): void {
-    const gridSize = 40;
-    const lineWidth = 1;
+  getGrid(): ReactiveGrid {
+    return this.grid;
+  }
 
-    this.ctx.strokeStyle = 'rgba(0, 100, 150, 0.3)';
-    this.ctx.lineWidth = lineWidth;
-
-    // Vertical lines
-    for (let x = 0; x < this.canvas.width; x += gridSize) {
-      this.ctx.beginPath();
-      this.ctx.moveTo(x, 0);
-      this.ctx.lineTo(x, this.canvas.height);
-      this.ctx.stroke();
-    }
-
-    // Horizontal lines
-    for (let y = 0; y < this.canvas.height; y += gridSize) {
-      this.ctx.beginPath();
-      this.ctx.moveTo(0, y);
-      this.ctx.lineTo(this.canvas.width, y);
-      this.ctx.stroke();
-    }
+  /**
+   * Draw grid overlay that picks up glow from particles/cursors
+   */
+  drawGridOverlay(): void {
+    this.grid.renderOverlay(this.ctx);
   }
 
   /**
@@ -90,60 +87,59 @@ export class CanvasManager {
   }
 
   /**
+   * Set the ship shape to use for rendering
+   */
+  setShipShape(shape: ShipShape): void {
+    this.shipShape = shape;
+  }
+
+  /**
    * Draw a cursor at the specified position (Geometry Wars style)
    */
-  drawCursor(x: number, y: number, color: string, label: string, rotation: number = 0): void {
-    const size = 20;
+  drawCursor(x: number, y: number, color: string, label: string, rotation: number = 0, health: number = 100): void {
+    // Draw ship using configurable shape
+    drawShipShape(this.ctx, this.shipShape, x, y, rotation, color);
 
-    // Save context state
+    // Save context for UI elements
     this.ctx.save();
 
-    // Translate to cursor position and rotate
-    this.ctx.translate(x, y);
-    this.ctx.rotate(rotation);
+    // Draw health bar (below ship)
+    const barWidth = 50;
+    const barHeight = 6;
+    const barY = y + 28; // Adjusted for shape size
 
-    // Draw outer glow (bloom effect)
-    this.ctx.shadowBlur = 30;
-    this.ctx.shadowColor = color;
+    // Health bar background
+    this.ctx.shadowBlur = 5;
+    this.ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    this.ctx.fillRect(x - barWidth / 2, barY, barWidth, barHeight);
 
-    // Draw geometric shape (diamond pointing in direction of movement)
-    this.ctx.strokeStyle = color;
-    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-    this.ctx.lineWidth = 3;
-    this.ctx.lineJoin = 'miter';
+    // Health bar fill (gradient from green to red based on health)
+    const healthPercent = Math.max(0, Math.min(100, health)) / 100;
+    const healthWidth = barWidth * healthPercent;
 
-    this.ctx.beginPath();
-    this.ctx.moveTo(size, 0);           // Right point (front)
-    this.ctx.lineTo(0, size);           // Bottom
-    this.ctx.lineTo(-size, 0);          // Left point (back)
-    this.ctx.lineTo(0, -size);          // Top
-    this.ctx.closePath();
-    this.ctx.fill();
-    this.ctx.stroke();
+    // Color based on health percentage
+    let healthColor;
+    if (healthPercent > 0.6) {
+      healthColor = '#00ff00'; // Green
+    } else if (healthPercent > 0.3) {
+      healthColor = '#ffff00'; // Yellow
+    } else {
+      healthColor = '#ff0000'; // Red
+    }
 
-    // Draw inner glow
-    this.ctx.shadowBlur = 15;
-    this.ctx.beginPath();
-    this.ctx.moveTo(size * 0.5, 0);
-    this.ctx.lineTo(0, size * 0.5);
-    this.ctx.lineTo(-size * 0.5, 0);
-    this.ctx.lineTo(0, -size * 0.5);
-    this.ctx.closePath();
-    this.ctx.stroke();
+    this.ctx.shadowBlur = 8;
+    this.ctx.shadowColor = healthColor;
+    this.ctx.fillStyle = healthColor;
+    this.ctx.fillRect(x - barWidth / 2 + 1, barY + 1, healthWidth - 2, barHeight - 2);
 
-    // Reset translation for label (draw at original position)
-    this.ctx.rotate(-rotation);
-    this.ctx.translate(-x, -y);
-
-    // Reset shadow for label
+    // Draw label with glow (below health bar)
     this.ctx.shadowBlur = 10;
-
-    // Draw label with glow
     this.ctx.font = 'bold 14px "Courier New", monospace';
     this.ctx.textAlign = 'left';
     this.ctx.textBaseline = 'middle';
 
-    const labelX = x + size + 10;
+    const labelX = x + 25; // Offset to the right of ship
     const labelY = y;
 
     // Label glow

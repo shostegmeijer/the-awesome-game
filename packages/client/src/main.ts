@@ -1,6 +1,9 @@
 import { CanvasManager } from './canvas.js';
 import { SocketManager } from './socket.js';
 import { CursorManager } from './cursor.js';
+import { ParticleSystem } from './particles.js';
+import { BulletSystem } from './bullets.js';
+import { ControlsManager } from './controls.js';
 import './styles.css';
 
 console.log('🎮 Initializing multiplayer cursor game...');
@@ -16,11 +19,35 @@ console.log(`🔌 Connecting to server at ${serverUrl}`);
 // Initialize cursor manager
 const cursors = new CursorManager();
 
+// Initialize particle system
+const particles = new ParticleSystem();
+
+// Initialize bullet system
+const bullets = new BulletSystem();
+
+// Initialize controls
+const controls = new ControlsManager();
+
 // Track local cursor position (bright cyan for visibility)
-let localCursor = { x: 0, y: 0, rotation: 0, color: '#00FFFF', label: 'You' };
+let localCursor = { x: 0, y: 0, rotation: 0, health: 100, color: '#00FFFF', label: 'You' };
 let targetPosition = { x: 0, y: 0 }; // Mouse target position
 const followSpeed = 0.08; // Lower = more lag, higher = more responsive (increased delay)
 const rotationSpeed = 0.1; // Smooth rotation interpolation
+
+// Shooting rate limiting
+let lastShotTime = 0;
+const shootCooldown = 150; // Milliseconds between shots (6-7 shots per second)
+
+// Collision settings
+const SHIP_COLLISION_RADIUS = 25; // Pixels
+const BULLET_DAMAGE = 10; // Damage per hit
+
+// Test bot configuration
+const TEST_BOT_ENABLED = true; // Set to false to disable
+const botId = 'test-bot';
+let botAngle = 0; // For circular movement
+const botRadius = 200; // Circle radius in pixels
+const botSpeed = 0.02; // Rotation speed (radians per frame)
 
 // Throttle utility - limits function calls to once per delay period
 function throttle<T extends (...args: any[]) => void>(fn: T, delay: number): T {
@@ -33,6 +60,13 @@ function throttle<T extends (...args: any[]) => void>(fn: T, delay: number): T {
     }
   }) as T;
 }
+
+// Set up controls - shoot on every press
+controls.onAction('shoot', () => {
+  // Only send to server - server will broadcast back to everyone including us
+  socket.emitBulletShoot(localCursor.x, localCursor.y, localCursor.rotation);
+  console.log('💥 Pew!');
+});
 
 // Socket event handlers
 socket.onUserJoined((data) => {
@@ -51,6 +85,48 @@ socket.onCursorsSync((data) => {
 socket.onCursorUpdate((data) => {
   cursors.updateCursor(data.userId, data.x, data.y);
 });
+
+// Handle bullet spawn from network
+socket.onBulletSpawn((data) => {
+  const mySocketId = socket.getSocketId();
+
+  if (data.userId === mySocketId) {
+    // For our own bullets, use the server's position/velocity
+    bullets.spawnFromNetwork(data.x, data.y, data.vx, data.vy, data.userId, data.color);
+  } else {
+    // For remote players, spawn from where WE currently see their cursor
+    // This keeps smooth interpolation and avoids position snapping
+    const remoteCursor = cursors.getCursors().get(data.userId);
+    if (remoteCursor) {
+      // Calculate angle from velocity
+      const angle = Math.atan2(data.vy, data.vx);
+      bullets.shoot(remoteCursor.x, remoteCursor.y, angle, data.userId, data.color);
+    }
+  }
+});
+
+// Handle health updates from network
+socket.onHealthUpdate((data) => {
+  if (data.userId === 'local') {
+    localCursor.health = data.health;
+  } else {
+    cursors.updateCursor(data.userId, 0, 0); // This will update health internally
+  }
+});
+
+// Get grid for applying forces
+const grid = canvas.getGrid();
+
+// Initialize test bot if enabled
+if (TEST_BOT_ENABLED) {
+  const centerX = window.innerWidth / 2;
+  const centerY = window.innerHeight / 2;
+  const botX = centerX + Math.cos(botAngle) * botRadius;
+  const botY = centerY + Math.sin(botAngle) * botRadius;
+
+  cursors.updateCursor(botId, botX, botY, '#FF00FF', 'Bot');
+  console.log('🤖 Test bot initialized');
+}
 
 // Start render loop
 canvas.startRenderLoop(() => {
@@ -73,25 +149,98 @@ canvas.startRenderLoop(() => {
 
   localCursor.rotation += rotationDiff * rotationSpeed;
 
+  // Spawn particles based on movement speed (more particles = faster movement)
+  const speed = Math.sqrt(dx * dx + dy * dy);
+  if (speed > 0.5) {
+    particles.spawn(localCursor.x, localCursor.y, localCursor.rotation, '#FF6600', speed);
+  }
+
+  // Apply force to grid from local player movement
+  grid.applyForce(localCursor.x, localCursor.y, dx * followSpeed, dy * followSpeed);
+
+  // Update test bot position (circular movement)
+  if (TEST_BOT_ENABLED) {
+    botAngle += botSpeed;
+    const centerX = window.innerWidth / 2;
+    const centerY = window.innerHeight / 2;
+    const botX = centerX + Math.cos(botAngle) * botRadius;
+    const botY = centerY + Math.sin(botAngle) * botRadius;
+
+    cursors.updateCursor(botId, botX, botY);
+  }
+
+  // Update remote cursors (smooth interpolation every frame)
+  cursors.update();
+
+  // Update particles
+  particles.update();
+
+  // Update bullets and apply grid forces
+  bullets.update();
+
+  // Apply forces from bullets to grid
+  bullets.getBullets().forEach(bullet => {
+    grid.applyForce(bullet.x, bullet.y, bullet.vx * 0.3, bullet.vy * 0.3);
+  });
+
+  // Check collisions - local player (use socket ID to avoid hitting yourself)
+  const mySocketId = socket.getSocketId();
+  if (mySocketId && bullets.checkCollision(localCursor.x, localCursor.y, SHIP_COLLISION_RADIUS, mySocketId)) {
+    localCursor.health = Math.max(0, localCursor.health - BULLET_DAMAGE);
+    console.log(`💥 You were hit! Health: ${localCursor.health}`);
+  }
+
+  // Check collisions - remote players
+  cursors.getCursors().forEach((cursor, userId) => {
+    if (bullets.checkCollision(cursor.x, cursor.y, SHIP_COLLISION_RADIUS, userId)) {
+      cursors.damageCursor(userId, BULLET_DAMAGE);
+    }
+  });
+
+  // Update controls (for continuous actions)
+  controls.update();
+
   // Clean up stale cursors
   cursors.cleanupStaleCursors(5000);
 
-  // Render local cursor (your own) with rotation
-  canvas.drawCursor(localCursor.x, localCursor.y, localCursor.color, localCursor.label, localCursor.rotation);
+  // Render particles first (so they appear behind cursors)
+  const ctx = canvas.getCanvas().getContext('2d')!;
+  particles.render(ctx);
 
-  // Render all remote cursors
+  // Render bullets
+  bullets.render(ctx);
+
+  // Render local cursor (your own) with rotation and health
+  canvas.drawCursor(localCursor.x, localCursor.y, localCursor.color, localCursor.label, localCursor.rotation, localCursor.health);
+
+  // Render all remote cursors with rotation and spawn their particles
   cursors.getCursors().forEach((cursor) => {
-    canvas.drawCursor(cursor.x, cursor.y, cursor.color, cursor.label);
+    // Calculate movement for particle spawning
+    const dx = cursor.x - cursor.prevX;
+    const dy = cursor.y - cursor.prevY;
+    const speed = Math.sqrt(dx * dx + dy * dy);
+
+    // Apply force to grid from remote player movement
+    if (speed > 0.5) {
+      grid.applyForce(cursor.x, cursor.y, dx, dy);
+      particles.spawn(cursor.x, cursor.y, cursor.rotation, '#FF6600', speed);
+    }
+
+    canvas.drawCursor(cursor.x, cursor.y, cursor.color, cursor.label, cursor.rotation, cursor.health);
   });
+
+  // Draw grid overlay AFTER everything to pick up glow
+  canvas.drawGridOverlay();
 });
 
 // Get canvas element for mouse events
 const canvasElement = canvas.getCanvas();
 
-// Create throttled emit function (60fps = ~16.6ms)
+// Create throttled emit function (local network = much faster polling)
+// 5ms = 200 updates/sec (great for local network with low latency)
 const throttledEmit = throttle((x: number, y: number) => {
   socket.emitCursorMove(x, y);
-}, 16);
+}, 5);
 
 // Track mouse movement
 canvasElement.addEventListener('mousemove', (e: MouseEvent) => {
@@ -106,4 +255,5 @@ canvasElement.addEventListener('mousemove', (e: MouseEvent) => {
   throttledEmit(localCursor.x, localCursor.y);
 });
 
-console.log('✅ App initialized - move your mouse!');
+console.log('✅ App initialized - move your mouse and press SPACE to shoot!');
+console.log('🎮 Controls:', controls.getBindings());

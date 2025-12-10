@@ -5,7 +5,9 @@ import type {
   UserJoinedPayload,
   UserLeftPayload,
   CursorsSyncPayload,
-  CursorUpdatePayload
+  CursorUpdatePayload,
+  BulletUpdatePayload,
+  HealthUpdatePayload
 } from '@awesome-game/shared';
 
 type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -54,6 +56,20 @@ export class SocketManager {
   }
 
   /**
+   * Emit bullet shoot to server
+   */
+  emitBulletShoot(x: number, y: number, angle: number): void {
+    this.socket.emit('bullet:shoot', { x, y, angle });
+  }
+
+  /**
+   * Get the socket ID
+   */
+  getSocketId(): string | undefined {
+    return this.socket.id;
+  }
+
+  /**
    * Listen for user joined events
    */
   onUserJoined(callback: (data: UserJoinedPayload) => void): void {
@@ -79,6 +95,20 @@ export class SocketManager {
    */
   onCursorUpdate(callback: (data: CursorUpdatePayload) => void): void {
     this.socket.on('cursor:update', callback);
+  }
+
+  /**
+   * Listen for bullet spawn events
+   */
+  onBulletSpawn(callback: (data: BulletUpdatePayload) => void): void {
+    this.socket.on('bullet:spawn', callback);
+  }
+
+  /**
+   * Listen for health update events
+   */
+  onHealthUpdate(callback: (data: HealthUpdatePayload) => void): void {
+    this.socket.on('health:update', callback);
   }
 
   /**

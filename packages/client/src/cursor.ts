@@ -5,6 +5,12 @@
 interface RemoteCursor {
   x: number;
   y: number;
+  targetX: number; // Target position from network
+  targetY: number;
+  prevX: number; // For velocity calculation
+  prevY: number;
+  rotation: number;
+  health: number; // 0-100
   color: string;
   label: string;
   lastSeen: number;
@@ -14,20 +20,33 @@ export class CursorManager {
   private cursors = new Map<string, RemoteCursor>();
 
   /**
-   * Update cursor position for a user
+   * Force set cursor position without interpolation (for syncing bullet spawns)
+   */
+  setCursorPosition(userId: string, x: number, y: number): void {
+    const existing = this.cursors.get(userId);
+    if (existing) {
+      this.cursors.set(userId, {
+        ...existing,
+        x,
+        y,
+        prevX: existing.x,
+        prevY: existing.y
+      });
+    }
+  }
+
+  /**
+   * Update cursor target position from network (actual interpolation happens in update())
    */
   updateCursor(userId: string, x: number, y: number, color?: string, label?: string): void {
     const existing = this.cursors.get(userId);
 
     if (existing) {
-      // Update existing cursor with smooth interpolation
-      const lerpFactor = 0.3; // Smooth transition
-      const newX = existing.x + (x - existing.x) * lerpFactor;
-      const newY = existing.y + (y - existing.y) * lerpFactor;
-
+      // Just update the target position - interpolation happens in update()
       this.cursors.set(userId, {
-        x: newX,
-        y: newY,
+        ...existing,
+        targetX: x,
+        targetY: y,
         color: color || existing.color,
         label: label || existing.label,
         lastSeen: Date.now()
@@ -37,12 +56,69 @@ export class CursorManager {
       this.cursors.set(userId, {
         x,
         y,
+        targetX: x,
+        targetY: y,
+        prevX: x,
+        prevY: y,
+        rotation: 0,
+        health: 100, // Start with full health
         color: color || '#fff',
         label: label || 'Unknown',
         lastSeen: Date.now()
       });
       console.log(`👤 New cursor: ${label || 'Unknown'} (${userId})`);
     }
+  }
+
+  /**
+   * Update all cursors (interpolate toward target, calculate rotation)
+   * Call this every frame for smooth movement
+   */
+  update(): void {
+    this.cursors.forEach((cursor, userId) => {
+      // Store previous position for velocity calculation
+      const prevX = cursor.x;
+      const prevY = cursor.y;
+
+      // Smooth interpolation toward target position
+      const followSpeed = 0.08; // Match local cursor follow speed
+      const dx = cursor.targetX - cursor.x;
+      const dy = cursor.targetY - cursor.y;
+
+      cursor.x += dx * followSpeed;
+      cursor.y += dy * followSpeed;
+
+      // Calculate rotation based on movement direction
+      if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+        const targetRotation = Math.atan2(dy, dx);
+
+        // Smooth rotation interpolation
+        let rotationDiff = targetRotation - cursor.rotation;
+
+        // Normalize angle difference to [-PI, PI]
+        while (rotationDiff > Math.PI) rotationDiff -= 2 * Math.PI;
+        while (rotationDiff < -Math.PI) rotationDiff += 2 * Math.PI;
+
+        cursor.rotation += rotationDiff * 0.15;
+      }
+
+      // Update previous position
+      cursor.prevX = prevX;
+      cursor.prevY = prevY;
+    });
+  }
+
+  /**
+   * Damage a cursor (reduce health)
+   */
+  damageCursor(userId: string, damage: number): boolean {
+    const cursor = this.cursors.get(userId);
+    if (cursor) {
+      cursor.health = Math.max(0, cursor.health - damage);
+      console.log(`💥 ${cursor.label} hit! Health: ${cursor.health}`);
+      return cursor.health <= 0; // Returns true if dead
+    }
+    return false;
   }
 
   /**

@@ -4,7 +4,7 @@ import type {
   ClientToServerEvents,
   CursorData
 } from '@awesome-game/shared';
-import { addUser, removeUser, updateCursor, getAllUsers } from './state.js';
+import { addUser, removeUser, updateCursor, getAllUsers, updateHealth } from './state.js';
 
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents>;
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
@@ -34,7 +34,8 @@ export function initializeSocketHandlers(io: TypedServer): void {
           x: u.x,
           y: u.y,
           color: u.color,
-          label: u.label
+          label: u.label,
+          health: u.health
         };
       }
     });
@@ -55,6 +56,43 @@ export function initializeSocketHandlers(io: TypedServer): void {
         x,
         y
       });
+    });
+
+    // Handle bullet shooting
+    socket.on('bullet:shoot', ({ x, y, angle }) => {
+      const user = getAllUsers().get(socket.id);
+      if (!user) return;
+
+      // Generate unique bullet ID
+      const bulletId = `${socket.id}-${Date.now()}-${Math.random()}`;
+
+      // Calculate velocity from angle
+      const bulletSpeed = 15;
+      const vx = Math.cos(angle) * bulletSpeed;
+      const vy = Math.sin(angle) * bulletSpeed;
+
+      // Broadcast bullet to ALL clients (including sender)
+      io.emit('bullet:spawn', {
+        bulletId,
+        userId: socket.id,
+        x,
+        y,
+        vx,
+        vy,
+        color: user.color
+      });
+    });
+
+    // Handle health damage
+    socket.on('health:damage', ({ userId, health }) => {
+      const newHealth = updateHealth(userId, health);
+      if (newHealth !== null) {
+        // Broadcast health update to all clients
+        io.emit('health:update', {
+          userId,
+          health: newHealth
+        });
+      }
     });
 
     // Handle disconnect

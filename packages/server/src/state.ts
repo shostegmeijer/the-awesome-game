@@ -6,6 +6,7 @@ export interface UserState {
   label: string;
   x: number;
   y: number;
+  health: number;
   lastUpdate: number;
 }
 
@@ -23,6 +24,7 @@ export function addUser(id: string): UserState {
     label,
     x: 0,
     y: 0,
+    health: 100,
     lastUpdate: Date.now()
   };
   users.set(id, user);
@@ -58,6 +60,19 @@ export function updateCursor(id: string, x: number, y: number): void {
  */
 export function getAllUsers(): Map<string, UserState> {
   return users;
+}
+
+/**
+ * Update user health
+ */
+export function updateHealth(id: string, health: number): number | null {
+  const user = users.get(id);
+  if (user) {
+    user.health = Math.max(0, Math.min(100, health));
+    console.log(`💥 ${user.label} health: ${user.health}`);
+    return user.health;
+  }
+  return null;
 }
 
 /**
