@@ -1,9 +1,3 @@
-import { Server } from 'socket.io';
-import {
-    ClientToServerEvents,
-    ServerToClientEvents
-} from '@awesome-game/shared';
-
 interface Bullet {
     id: string;
     userId: string;

@@ -122,6 +122,17 @@ export class CursorManager {
   }
 
   /**
+   * Set absolute health for a cursor
+   */
+  setHealth(userId: string, health: number): void {
+    const cursor = this.cursors.get(userId);
+    if (cursor) {
+      cursor.health = health;
+      console.log(`❤️ ${cursor.label} health updated: ${cursor.health}`);
+    }
+  }
+
+  /**
    * Remove a cursor
    */
   removeCursor(userId: string): void {

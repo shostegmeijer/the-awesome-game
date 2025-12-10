@@ -118,7 +118,7 @@ export class SocketManager {
    * Generic event listener
    */
   on<Ev extends keyof ServerToClientEvents>(event: Ev, callback: ServerToClientEvents[Ev]): void {
-    this.socket.on(event, callback);
+    this.socket.on(event, callback as any);
   }
 
   /**

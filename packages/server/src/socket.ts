@@ -2,12 +2,12 @@ import { Server, Socket } from 'socket.io';
 import {
   ServerToClientEvents,
   ClientToServerEvents,
-  CursorData,
-  WeaponType
+  CursorData
 } from '@awesome-game/shared';
 import { addUser, removeUser, updateCursor, getAllUsers, updateHealth } from './state.js';
 import { MineSystem } from './mines.js';
 import { PowerUpSystem } from './powerups.js';
+import { BulletSystem } from './bullets.js';
 
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents>;
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
@@ -19,11 +19,13 @@ export function initializeSocketHandlers(io: TypedServer): void {
   // Initialize game systems
   const mineSystem = new MineSystem(io);
   const powerUpSystem = new PowerUpSystem(io);
+  const bulletSystem = new BulletSystem();
 
   // Start server-side game loop (20 TPS)
   setInterval(() => {
     mineSystem.update();
     powerUpSystem.update();
+    bulletSystem.update();
 
     // Check collisions
     const users = getAllUsers();
@@ -33,13 +35,21 @@ export function initializeSocketHandlers(io: TypedServer): void {
       const collectedPowerUp = powerUpSystem.checkCollection(user.x, user.y, user.radius);
       if (collectedPowerUp) {
         powerUpSystem.collectPowerUp(collectedPowerUp.id, user.id);
-        // Update user weapon state if we were tracking it strictly
       }
 
       // Check mine collision with player
       const hitMineId = mineSystem.checkPlayerCollision(user.x, user.y, user.radius);
       if (hitMineId) {
         mineSystem.explodeMine(hitMineId, user.id);
+      }
+    });
+
+    // Check bullet collisions with mines
+    bulletSystem.getBullets().forEach(bullet => {
+      const hitMineId = mineSystem.checkBulletCollision(bullet.x, bullet.y);
+      if (hitMineId) {
+        mineSystem.explodeMine(hitMineId, bullet.userId);
+        bulletSystem.removeBullet(bullet.id);
       }
     });
 
@@ -102,7 +112,10 @@ export function initializeSocketHandlers(io: TypedServer): void {
       // Generate unique bullet ID
       const bulletId = `${socket.id}-${Date.now()}-${Math.random()}`;
 
-      // Calculate velocity from angle
+      // Add to server tracking
+      bulletSystem.addBullet(bulletId, socket.id, x, y, angle);
+
+      // Calculate velocity from angle (for client prediction)
       const bulletSpeed = 15;
       const vx = Math.cos(angle) * bulletSpeed;
       const vy = Math.sin(angle) * bulletSpeed;
@@ -117,10 +130,6 @@ export function initializeSocketHandlers(io: TypedServer): void {
         vy,
         color: user.color
       });
-
-      // Check immediate collision with mines (simplified)
-      // In a real physics engine we'd step the bullet, but here we can just check proximity if we wanted
-      // For now, let's trust the client for bullet-mine collision or implement a bullet manager server-side later
     });
 
     // Handle health damage

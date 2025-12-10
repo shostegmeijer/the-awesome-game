@@ -168,11 +168,13 @@ socket.onBulletSpawn((data) => {
 });
 
 // Handle health updates from network
+// Handle health updates from network
 socket.onHealthUpdate((data) => {
-  if (data.userId === 'local') {
+  if (data.userId === socket.getSocketId() || data.userId === 'local') {
     localCursor.health = data.health;
+    console.log(`❤️ Health updated: ${localCursor.health}`);
   } else {
-    cursors.updateCursor(data.userId, 0, 0); // This will update health internally
+    cursors.setHealth(data.userId, data.health);
   }
 });
 
