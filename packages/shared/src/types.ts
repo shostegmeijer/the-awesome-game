@@ -9,7 +9,8 @@ export interface CursorMovePayload {
 
 // Server → Client events
 export interface UserJoinedPayload {
-  cursors: CursorUpdate[];
+  userId: string;
+  cursors: CursorData[];
   color: string;
   label: string;
 }
@@ -52,6 +53,7 @@ export interface BulletShootPayload {
   x: number;
   y: number;
   angle: number;
+  isRocket?: boolean;
 }
 
 // Payload for bullet update
@@ -63,6 +65,7 @@ export interface BulletUpdatePayload {
   vx: number;
   vy: number;
   color: string;
+  isRocket?: boolean;
 }
 
 // Payload for health update
@@ -173,6 +176,14 @@ export interface ServerToClientEvents {
   'admin:removeBot:error': (data: AdminErrorPayload) => void;
   'admin:removeBot:ok': (data: { removed: string }) => void;
   'admin:settings': (data: AdminSettingsPayload) => void;
+  'player:respawn': (data: PlayerRespawnPayload) => void;
+}
+
+export interface PlayerRespawnPayload {
+  userId: string;
+  x: number;
+  y: number;
+  respawnTime: number; // Timestamp when respawn happens
 }
 
 export interface ClientToServerEvents {

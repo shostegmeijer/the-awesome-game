@@ -15,10 +15,51 @@ type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
  * Initialize Socket.io event handlers
  */
 export function initializeSocketHandlers(io: TypedServer): void {
-  // Track player respawn timers
-  const playerRespawnAt = new Map<string, number>();
+  // Centralized death handler (from merged development)
+  const handleDeath = (userId: string) => {
+    const RESPAWN_DELAY = 10000;
+    const respawnTime = Date.now() + RESPAWN_DELAY;
+
+    // Notify all users about respawn (so everyone knows)
+    io.emit('player:respawn', {
+      userId,
+      x: 0,
+      y: 0,
+      respawnTime
+    });
+
+    setTimeout(() => {
+      const user = getAllUsers().get(userId);
+      if (user) {
+        // Reset user state
+        user.health = 100;
+        user.x = Math.random() * 2000;
+        user.y = Math.random() * 2000;
+        user.weaponType = 'machineGun';
+
+        // Notify all clients about respawn (health update + position update)
+        io.emit('health:update', {
+          userId,
+          health: 100
+        });
+
+        // Force position update
+        io.emit('cursor:update', {
+          userId,
+          x: user.x,
+          y: user.y,
+          rotation: 0,
+          color: user.color,
+          label: user.label,
+          health: user.health,
+          type: 'player',
+        });
+      }
+    }, RESPAWN_DELAY);
+  };
+
   // Initialize game systems
-  const mineSystem = new MineSystem(io);
+  const mineSystem = new MineSystem(io, handleDeath);
   const powerUpSystem = new PowerUpSystem(io);
   const bulletSystem = new BulletSystem();
   const botSystem = new BotSystem(io, bulletSystem);
@@ -31,7 +72,7 @@ export function initializeSocketHandlers(io: TypedServer): void {
     bulletSystem.update();
     laserSystem.update();
 
-    // Check collisions and handle respawns
+    // Check collisions
     const users = getAllUsers();
 
     // Check powerup collection
@@ -47,20 +88,7 @@ export function initializeSocketHandlers(io: TypedServer): void {
         mineSystem.explodeMine(hitMineId, user.id);
       }
 
-      // Handle player respawn timing
-      if (user.health <= 0) {
-        const when = playerRespawnAt.get(user.id);
-        if (!when) {
-          playerRespawnAt.set(user.id, Date.now() + 3000); // 3s respawn
-        } else if (Date.now() >= when) {
-          const s = getSettings();
-          const newHealth = updateHealth(user.id, s.playerStartingHealth);
-          if (newHealth !== null) {
-            io.emit('health:update', { userId: user.id, health: newHealth });
-          }
-          playerRespawnAt.delete(user.id);
-        }
-      }
+      // Player respawn timing handled by handleDeath
     });
 
     // Check bullet collisions with mines, users, and bots
@@ -85,6 +113,9 @@ export function initializeSocketHandlers(io: TypedServer): void {
           const newHealth = updateHealth(user.id, Math.max(0, user.health - 10));
           if (newHealth !== null) {
             io.emit('health:update', { userId: user.id, health: newHealth });
+            if (newHealth === 0) {
+              handleDeath(user.id);
+            }
           }
           return;
         }
@@ -131,6 +162,7 @@ export function initializeSocketHandlers(io: TypedServer): void {
           label: u.label,
           health: u.health,
           type: 'player',
+          activeWeapon: (u as any).weaponType,
         };
       }
     });
@@ -171,13 +203,14 @@ export function initializeSocketHandlers(io: TypedServer): void {
         label: getAllUsers().get(socket.id)?.label || 'Player',
         health: getAllUsers().get(socket.id)?.health || 100,
         type: 'player',
+        activeWeapon: getAllUsers().get(socket.id)?.weaponType as any,
       });
     });
 
     // Handle bullet shooting
-    socket.on('bullet:shoot', ({ x, y, angle }) => {
+    socket.on('bullet:shoot', ({ x, y, angle, isRocket }) => {
       const user = getAllUsers().get(socket.id);
-      if (!user) return;
+      if (!user || user.health <= 0) return;
 
       // Generate unique bullet ID
       const bulletId = `${socket.id}-${Date.now()}-${Math.random()}`;
@@ -198,14 +231,15 @@ export function initializeSocketHandlers(io: TypedServer): void {
         y,
         vx,
         vy,
-        color: user.color
+        color: user.color,
+        isRocket
       });
     });
 
     // Handle laser shooting
     socket.on('laser:shoot', ({ angle }) => {
       const user = getAllUsers().get(socket.id);
-      if (!user) return;
+      if (!user || user.health <= 0) return;
 
       // Add to server tracking for continuous collision
       laserSystem.addLaser(socket.id, angle);
@@ -220,6 +254,11 @@ export function initializeSocketHandlers(io: TypedServer): void {
           userId,
           health: newHealth
         });
+
+        // Check for death and schedule respawn
+        if (newHealth <= 0) {
+          handleDeath(userId);
+        }
       }
     });
 

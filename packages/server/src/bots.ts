@@ -1,7 +1,7 @@
 import { ClientToServerEvents, ServerToClientEvents } from '@awesome-game/shared';
 import { Server } from 'socket.io';
 import { BulletSystem } from './bullets.js';
-import { addBot, getAllBots, getSettings, removeBot, setBotHeading, setBotPosition, setBotHealth } from './state.js';
+import { addBot, getAllBots, getSettings, removeBot, setBotHeading, setBotHealth, setBotPosition } from './state.js';
 
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents>;
 

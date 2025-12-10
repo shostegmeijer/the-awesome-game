@@ -95,6 +95,21 @@ export function updatePoints(id: string, pointsDelta: number): number | null {
   }
   return null;
 }
+/**
+ * Respawn a user
+ */
+export function respawnUser(id: string): UserState | null {
+  const user = users.get(id);
+  if (user) {
+    user.health = 100;
+    user.x = Math.random() * 2000; // Random position
+    user.y = Math.random() * 2000;
+    user.weaponType = 'machineGun'; // Reset weapon
+    console.log(`✨ ${user.label} respawned at ${Math.round(user.x)}, ${Math.round(user.y)}`);
+    return user;
+  }
+  return null;
+}
 
 // --- Bot management (simple in-memory placeholders) ---
 export interface BotState {
