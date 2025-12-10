@@ -148,6 +148,8 @@ export interface LaserSpawnPayload {
 
 // Socket.io event map for type safety
 export interface ServerToClientEvents {
+  'reconnect': (attemptNumber: number) => void;
+  'reconnect_attempt': () => void;
   'user:joined': (data: UserJoinedPayload) => void;
   'user:left': (data: UserLeftPayload) => void;
   'cursors:sync': (data: CursorsSyncPayload) => void;

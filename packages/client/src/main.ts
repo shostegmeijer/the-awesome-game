@@ -588,7 +588,6 @@ canvas.startRenderLoop(() => {
   const laserAttackerId = mySocketId ? lasers.checkCollision(localCursor.x, localCursor.y, SHIP_COLLISION_RADIUS, mySocketId) : null;
 
   if (laserAttackerId) {
-    const oldHealth = localCursor.health;
     localCursor.health = Math.max(0, localCursor.health - WEAPONS[WeaponType.LASER].damage);
     console.log(`🔥 Hit by laser! Health: ${localCursor.health}`);
 

@@ -13,9 +13,6 @@ export class MineSystem {
   private mines: ClientMine[] = [];
   private mineCanvas: HTMLCanvasElement;
 
-  // Visual properties
-  private damageRadius = 120; // For visualization only
-
   constructor() {
     this.mineCanvas = document.createElement('canvas');
     this.mineCanvas.width = 100;

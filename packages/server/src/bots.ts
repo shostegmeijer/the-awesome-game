@@ -1,4 +1,4 @@
-import { ClientToServerEvents, ServerToClientEvents } from '@awesome-game/shared';
+import { ClientToServerEvents, MAP_WIDTH, ServerToClientEvents } from '@awesome-game/shared';
 import { Server } from 'socket.io';
 import { BulletSystem } from './bullets.js';
 import { addBot, getAllBots, getSettings, removeBot, setBotHeading, setBotHealth, setBotPosition } from './state.js';
@@ -41,7 +41,7 @@ export class BotSystem {
     }
 
     // Movement params
-    const mapWidth = 2000, mapHeight = 2000, padding = 50;
+    const mapWidth = MAP_WIDTH, mapHeight = MAP_WIDTH, padding = 50;
     const baseSpeed = s.botSpeed; // admin-controlled
 
       bots.forEach(bot => {

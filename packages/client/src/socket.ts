@@ -1,15 +1,15 @@
-import { io, Socket } from 'socket.io-client';
 import type {
-  ServerToClientEvents,
+  BulletUpdatePayload,
   ClientToServerEvents,
-  UserJoinedPayload,
-  UserLeftPayload,
   CursorsSyncPayload,
   CursorUpdatePayload,
-  BulletUpdatePayload,
   HealthUpdatePayload,
-  PlayerRespawnPayload
+  PlayerRespawnPayload,
+  ServerToClientEvents,
+  UserJoinedPayload,
+  UserLeftPayload
 } from '@awesome-game/shared';
+import { io, Socket } from 'socket.io-client';
 
 type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -76,7 +76,7 @@ export class SocketManager {
    * Emit health damage to server
    */
   emitHealthDamage(health: number, attackerId?: string): void {
-    this.socket.emit('health:damage', { userId: this.socket.id, health, attackerId });
+    this.socket.emit('health:damage', { userId: this.socket.id!, health, attackerId });
   }
 
   /**

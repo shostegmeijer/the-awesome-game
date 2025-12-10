@@ -410,4 +410,17 @@ export function initializeSocketHandlers(io: TypedServer): void {
   setInterval(() => {
     io.emit('admin:bots', { bots: getAllBots() });
   }, 500);
+
+  // Periodically refresh admin players list
+  setInterval(() => {
+    const players = Array.from(getAllUsers().values()).map(u => ({
+      id: u.id,
+      label: u.label,
+      x: u.x,
+      y: u.y,
+      health: u.health,
+      points: u.points,
+    }));
+    io.emit('admin:players', { players });
+  }, 500);
 }
