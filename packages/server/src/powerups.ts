@@ -5,6 +5,7 @@ import {
     PowerUpData,
     PowerUpCollectPayload,
     WeaponType,
+    PowerUpType,
     MAP_WIDTH,
     MAP_HEIGHT
 } from '@awesome-game/shared';
@@ -43,33 +44,68 @@ export class PowerUpSystem {
      */
     spawn(): void {
         const padding = 100;
-        // Using window fallback for now, ideally should use map config
         const x = (Math.random() - 0.5) * MAP_WIDTH;
         const y = (Math.random() - 0.5) * MAP_HEIGHT;
 
-        // Random weapon type (exclude machine gun)
-        const weaponTypes = [
-            WeaponType.TRIPLE_SHOT,
-            WeaponType.SHOTGUN,
-            WeaponType.ROCKET,
-            WeaponType.LASER
-        ];
-        const weaponType = weaponTypes[Math.floor(Math.random() * weaponTypes.length)];
+        // Weighted powerup type selection
+        // Weapons: 70%, Health: 20%, Shield: 10%
+        const random = Math.random();
+        let type: PowerUpType;
+        if (random < 0.70) {
+            type = PowerUpType.WEAPON;
+        } else if (random < 0.90) {
+            type = PowerUpType.HEALTH;
+        } else {
+            type = PowerUpType.SHIELD;
+        }
 
-        const powerup: PowerUp = {
-            id: `powerup - ${ this.nextId++ } -${ Date.now() } `,
-            x,
-            y,
-            weaponType,
-            collisionRadius: 30
-        };
+        let powerup: PowerUp;
+
+        if (type === PowerUpType.WEAPON) {
+            // Random weapon type (exclude machine gun)
+            const weaponTypes = [
+                WeaponType.TRIPLE_SHOT,
+                WeaponType.SHOTGUN,
+                WeaponType.ROCKET,
+                WeaponType.LASER,
+                WeaponType.HOMING_MISSILES
+            ];
+            const weaponType = weaponTypes[Math.floor(Math.random() * weaponTypes.length)];
+
+            powerup = {
+                id: `powerup-${this.nextId++}-${Date.now()}`,
+                x,
+                y,
+                type,
+                weaponType,
+                collisionRadius: 30
+            };
+            console.log(`💎 Powerup spawned: ${weaponType}`);
+        } else if (type === PowerUpType.HEALTH) {
+            powerup = {
+                id: `powerup-${this.nextId++}-${Date.now()}`,
+                x,
+                y,
+                type,
+                collisionRadius: 30
+            };
+            console.log(`💎 Powerup spawned: HEALTH PACK`);
+        } else {
+            // SHIELD
+            powerup = {
+                id: `powerup-${this.nextId++}-${Date.now()}`,
+                x,
+                y,
+                type,
+                collisionRadius: 30
+            };
+            console.log(`💎 Powerup spawned: SHIELD`);
+        }
 
         this.powerups.push(powerup);
 
         // Broadcast new powerup
         this.io.emit('powerup:spawn', powerup);
-
-        console.log(`💎 Powerup spawned: ${ weaponType } `);
     }
 
     /**
@@ -92,7 +128,7 @@ export class PowerUpSystem {
     /**
      * Collect a powerup
      */
-    collectPowerUp(powerUpId: string, userId: string): WeaponType | null {
+    collectPowerUp(powerUpId: string, userId: string): PowerUp | null {
         const index = this.powerups.findIndex(p => p.id === powerUpId);
         if (index === -1) return null;
 
@@ -103,10 +139,11 @@ export class PowerUpSystem {
         this.io.emit('powerup:collect', {
             powerUpId: powerup.id,
             userId,
+            type: powerup.type,
             weaponType: powerup.weaponType
         });
 
-        return powerup.weaponType;
+        return powerup;
     }
 
     /**
@@ -117,6 +154,7 @@ export class PowerUpSystem {
             id: p.id,
             x: p.x,
             y: p.y,
+            type: p.type,
             weaponType: p.weaponType
         }));
     }

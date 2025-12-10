@@ -135,6 +135,10 @@
         <label>Player Start Health <input type="number" id="playerStartingHealth" min="1" max="100" value="100" /></label>
         <button id="saveSettings">Save</button>
       </div>
+      <div class="row mt8">
+        <button id="endGame" style="background: #c82333; border-color: #bd2130;">End Game & Submit Scores</button>
+        <span class="muted" id="endGameStatus"></span>
+      </div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
@@ -273,6 +277,30 @@
           playerStartingHealth: parseInt(document.getElementById('playerStartingHealth').value, 10),
         };
         adminSocket.emit('admin:updateSettings', { token: getToken(), settings });
+      });
+
+      // End game and submit scores
+      document.getElementById('endGame').addEventListener('click', () => {
+        const statusEl = document.getElementById('endGameStatus');
+        statusEl.textContent = 'Submitting scores...';
+        adminSocket.emit('admin:endGame', { token: getToken() });
+      });
+
+      // Handle end game response
+      adminSocket.on('admin:endGame:ok', ({ submitted, failed, total }) => {
+        const statusEl = document.getElementById('endGameStatus');
+        statusEl.textContent = `✅ Submitted ${submitted}/${total} scores (${failed} failed)`;
+        setTimeout(() => {
+          statusEl.textContent = '';
+        }, 5000);
+      });
+
+      adminSocket.on('admin:endGame:error', ({ error }) => {
+        const statusEl = document.getElementById('endGameStatus');
+        statusEl.textContent = `❌ Error: ${error}`;
+        setTimeout(() => {
+          statusEl.textContent = '';
+        }, 5000);
       });
     </script>
   </body>

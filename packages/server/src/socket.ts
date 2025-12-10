@@ -23,6 +23,26 @@ type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
  * Initialize Socket.io event handlers
  */
 export function initializeSocketHandlers(io: TypedServer): void {
+  // Helper to apply damage with shield absorption
+  const applyDamage = (user: any, damage: number): number => {
+    if (user.shield > 0) {
+      // Shield absorbs damage first
+      const shieldDamage = Math.min(user.shield, damage);
+      user.shield -= shieldDamage;
+      damage -= shieldDamage;
+      console.log(`🛡️ ${user.label} shield absorbed ${shieldDamage} damage (${user.shield} remaining)`);
+    }
+
+    if (damage > 0) {
+      // Apply remaining damage to health
+      const newHealth = Math.max(0, user.health - damage);
+      updateHealth(user.id, newHealth);
+      return newHealth;
+    }
+
+    return user.health;
+  };
+
   // Centralized death handler
   const handleDeath = (userId: string, attackerId?: string) => {
     const user = getAllUsers().get(userId);
@@ -92,7 +112,8 @@ export function initializeSocketHandlers(io: TypedServer): void {
         // Notify all clients about respawn (health update + position update)
         io.emit('health:update', {
           userId,
-          health: 100
+          health: 100,
+          shield: user.shield || 0
         });
 
         // Force position update
@@ -135,7 +156,12 @@ export function initializeSocketHandlers(io: TypedServer): void {
           userId,
           x: user.x,
           y: user.y,
-          rotation: user.rotation
+          rotation: user.rotation,
+          color: user.color,
+          label: user.label,
+          health: user.health,
+          type: 'player',
+          shield: user.shield
         });
       }
     });
@@ -150,7 +176,24 @@ export function initializeSocketHandlers(io: TypedServer): void {
 
       const collectedPowerUp = powerUpSystem.checkCollection(user.x, user.y, user.radius);
       if (collectedPowerUp) {
-        powerUpSystem.collectPowerUp(collectedPowerUp.id, user.id);
+        const powerup = powerUpSystem.collectPowerUp(collectedPowerUp.id, user.id);
+        if (powerup) {
+          if (powerup.type === 'weapon' && powerup.weaponType) {
+            // Change weapon
+            (user as any).weaponType = powerup.weaponType;
+            console.log(`⚡ ${user.label} picked up ${powerup.weaponType}`);
+          } else if (powerup.type === 'health') {
+            // Restore 50 HP (capped at 100)
+            const newHealth = Math.min(100, user.health + 50);
+            updateHealth(user.id, newHealth);
+            io.emit('health:update', { userId: user.id, health: newHealth, shield: user.shield });
+            console.log(`❤️ ${user.label} picked up HEALTH PACK (${user.health} → ${newHealth})`);
+          } else if (powerup.type === 'shield') {
+            // Add 30 shield HP
+            user.shield = 30;
+            console.log(`🛡️ ${user.label} picked up SHIELD (${user.shield} HP)`);
+          }
+        }
       }
 
         // Check mine collision with player
@@ -183,12 +226,10 @@ export function initializeSocketHandlers(io: TypedServer): void {
         const dist2 = dx * dx + dy * dy;
         if (dist2 <= USER_RADIUS * USER_RADIUS) {
           bulletSystem.removeBullet(bullet.id);
-          const newHealth = updateHealth(user.id, Math.max(0, user.health - 10));
-          if (newHealth !== null) {
-            io.emit('health:update', { userId: user.id, health: newHealth });
-            if (newHealth === 0) {
-              handleDeath(user.id);
-            }
+          const newHealth = applyDamage(user, 10);
+          io.emit('health:update', { userId: user.id, health: newHealth, shield: user.shield });
+          if (newHealth === 0) {
+            handleDeath(user.id, bullet.userId);
           }
           return;
         }
@@ -280,6 +321,7 @@ export function initializeSocketHandlers(io: TypedServer): void {
           health: u.health,
           type: 'player',
           activeWeapon: (u as any).weaponType,
+          shield: u.shield,
         };
       }
     });
@@ -288,6 +330,7 @@ export function initializeSocketHandlers(io: TypedServer): void {
       cursors[bot.id] = {
         x: bot.x,
         y: bot.y,
+        rotation: 0, // Client calculates rotation from movement
         color: '#FF00FF',
         label: bot.label,
         health: bot.health,
@@ -317,16 +360,18 @@ export function initializeSocketHandlers(io: TypedServer): void {
       updateCursor(socket.id, clampedX, clampedY, rotation);
 
       // Broadcast new position to all other clients (optimized: only send x,y,rotation)
+      const user = getAllUsers().get(socket.id);
       socket.broadcast.emit('cursor:update', {
         userId: socket.id,
         x,
         y,
         rotation: rotation || 0,
-        color: getAllUsers().get(socket.id)?.color || '#ffffff',
-        label: getAllUsers().get(socket.id)?.label || 'Player',
-        health: getAllUsers().get(socket.id)?.health || 100,
+        color: user?.color || '#ffffff',
+        label: user?.label || 'Player',
+        health: user?.health || 100,
         type: 'player',
-        activeWeapon: getAllUsers().get(socket.id)?.weaponType as any,
+        activeWeapon: user?.weaponType as any,
+        shield: user?.shield || 0,
       });
     });
 
@@ -397,23 +442,9 @@ export function initializeSocketHandlers(io: TypedServer): void {
 
     // Handle disconnect
     socket.on('disconnect', async () => {
-      const user = getAllUsers().get(socket.id);
       console.log(`🔌 User disconnected: ${socket.id} `);
 
-      // Submit score to hub if player has a playerKey and hasn't submitted yet
-      if (user && user.playerKey && !user.scoreSubmitted) {
-        const rank = getUserRank(socket.id);
-        const totalPlayers = getAllUsers().size;
-        const hubScore = calculatePlacementScore(rank, totalPlayers);
-
-        console.log(`📊 Player stats - Rank: ${rank}/${totalPlayers}, Kills: ${user.kills}, Deaths: ${user.deaths}, Hub Score: ${hubScore}`);
-
-        const success = await submitScoreToHub(user.playerKey, user.label, hubScore);
-        if (success) {
-          markScoreSubmitted(socket.id);
-          console.log(`✅ Score submitted for ${user.label} (${user.playerKey}): ${hubScore}/100`);
-        }
-      }
+      // Score submission removed - only admin can submit scores via "End Game" button
 
       removeUser(socket.id);
       io.emit('user:left', { userId: socket.id });
@@ -511,6 +542,43 @@ export function initializeSocketHandlers(io: TypedServer): void {
       if (!isAuthorized(token)) return socket.emit('admin:error', { error: 'Unauthorized' });
       const updated = updateSettings(settings);
       socket.emit('admin:settings', updated);
+    });
+
+    // End game and submit all scores
+    socket.on('admin:endGame', async ({ token }: { token: string }) => {
+      if (!isAuthorized(token)) return socket.emit('admin:error', { error: 'Unauthorized' });
+
+      console.log('🏁 Admin command: End game and submit scores');
+
+      const users = getAllUsers();
+      const totalPlayers = users.size;
+      let submitted = 0;
+      let failed = 0;
+      let total = 0;
+
+      // Submit scores for all players with playerKeys
+      for (const [userId, user] of users.entries()) {
+        if (user.playerKey && !user.scoreSubmitted) {
+          total++;
+          const rank = getUserRank(userId);
+          const hubScore = calculatePlacementScore(rank, totalPlayers);
+
+          console.log(`📊 Submitting score for ${user.label} - Rank: ${rank}/${totalPlayers}, Kills: ${user.kills}, Deaths: ${user.deaths}, Hub Score: ${hubScore}`);
+
+          const success = await submitScoreToHub(user.playerKey, user.label, hubScore);
+          if (success) {
+            markScoreSubmitted(userId);
+            submitted++;
+            console.log(`✅ Score submitted for ${user.label} (${user.playerKey}): ${hubScore}/100`);
+          } else {
+            failed++;
+            console.error(`❌ Failed to submit score for ${user.label} (${user.playerKey})`);
+          }
+        }
+      }
+
+      console.log(`🏁 End game complete: ${submitted}/${total} scores submitted, ${failed} failed`);
+      socket.emit('admin:endGame:ok', { submitted, failed, total });
     });
   });
 

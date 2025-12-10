@@ -18,6 +18,7 @@ export interface UserState {
   scoreSubmitted: boolean; // Track if score has been submitted to hub
   vx: number; // Velocity X for physics
   vy: number; // Velocity Y for physics
+  shield: number; // Shield health (0 = no shield)
 }
 
 import { MAP_HEIGHT, MAP_WIDTH } from '@awesome-game/shared';
@@ -41,13 +42,14 @@ export function addUser(id: string, playerKey?: string): UserState {
     points: 0,
     lastUpdate: Date.now(),
     weaponType: 'machineGun',
-    radius: 25, // Standard ship radius
+    radius: 30, // Standard ship radius
     kills: 0,
     deaths: 0,
     playerKey,
     scoreSubmitted: false,
     vx: 0, // Start with no velocity
-    vy: 0
+    vy: 0,
+    shield: 0 // No shield initially
   };
   users.set(id, user);
   console.log(`✅ User added: ${label} (${id}) ${playerKey ? `[${playerKey}]` : ''} - ${color}`);
@@ -188,7 +190,7 @@ export interface GameSettings {
 let settings: GameSettings = {
   botSpeed: 4.0,
   botCount: 5,
-  botHealth: 30,
+  botHealth: 5,
   playerStartingHealth: 100
 };
 

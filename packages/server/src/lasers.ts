@@ -104,9 +104,21 @@ export class LaserSystem {
                 if (target.health <= 0) return; // Skip dead players
 
                 if (this.checkLaserHit(user.x, user.y, laser.angle, LASER_LENGTH, target.x, target.y, 25)) {
-                    const newHealth = Math.max(0, target.health - LASER_DAMAGE);
-                    updateHealth(targetId, newHealth);
-                    this.io.emit('health:update', { userId: targetId, health: newHealth });
+                    let damage = LASER_DAMAGE;
+
+                    // Shield absorption
+                    if ((target as any).shield > 0) {
+                        const shieldDamage = Math.min((target as any).shield, damage);
+                        (target as any).shield -= shieldDamage;
+                        damage -= shieldDamage;
+                    }
+
+                    // Apply remaining damage to health
+                    if (damage > 0) {
+                        const newHealth = Math.max(0, target.health - damage);
+                        updateHealth(targetId, newHealth);
+                        this.io.emit('health:update', { userId: targetId, health: newHealth, shield: (target as any).shield || 0 });
+                    }
                 }
             });
 

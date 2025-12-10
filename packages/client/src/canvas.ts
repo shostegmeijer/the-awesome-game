@@ -96,7 +96,28 @@ export class CanvasManager {
   /**
    * Draw a cursor at the specified position (Geometry Wars style)
    */
-  drawCursor(x: number, y: number, color: string, label: string, rotation: number = 0, health: number = 100, type: 'player' | 'bot'): void {
+  drawCursor(x: number, y: number, color: string, label: string, rotation: number = 0, health: number = 100, type: 'player' | 'bot', shield: number = 0): void {
+    // Draw shield circle if active
+    if (shield > 0) {
+      const shieldRadius = type === 'bot' ? 35 : 40;
+      this.ctx.save();
+      this.ctx.strokeStyle = '#00FFFF';
+      this.ctx.lineWidth = 3;
+      this.ctx.shadowBlur = 20;
+      this.ctx.shadowColor = '#00FFFF';
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, shieldRadius, 0, Math.PI * 2);
+      this.ctx.stroke();
+
+      // Inner glow circle
+      this.ctx.lineWidth = 1.5;
+      this.ctx.shadowBlur = 10;
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, shieldRadius - 4, 0, Math.PI * 2);
+      this.ctx.stroke();
+      this.ctx.restore();
+    }
+
     // Render based on cursor type
     if (type === 'bot') {
       // Hexagon for bots with rotation

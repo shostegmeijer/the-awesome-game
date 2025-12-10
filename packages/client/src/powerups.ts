@@ -2,7 +2,7 @@
  * Power-up system (Client-side rendering only)
  */
 
-import { PowerUpData } from '@awesome-game/shared';
+import { PowerUpData, PowerUpType } from '@awesome-game/shared';
 import { WeaponType as ClientWeaponType, WEAPONS } from './weapons.js';
 
 interface ClientPowerUp extends PowerUpData {
@@ -19,6 +19,43 @@ export class PowerUpSystem {
   }
 
   private prerenderPowerUps(): void {
+    // Render health pack powerup (smaller)
+    const healthCanvas = document.createElement('canvas');
+    healthCanvas.width = 100;
+    healthCanvas.height = 100;
+    const healthCtx = healthCanvas.getContext('2d')!;
+    healthCtx.strokeStyle = '#00FF00';
+    healthCtx.fillStyle = '#00FF00';
+    healthCtx.lineWidth = 2.5;
+    healthCtx.shadowBlur = 12;
+    healthCtx.shadowColor = '#00FF00';
+    // Draw medical cross (smaller and skinnier)
+    healthCtx.fillRect(44, 35, 12, 30); // Vertical (skinnier)
+    healthCtx.fillRect(35, 44, 30, 12); // Horizontal (skinnier)
+    this.powerupCanvases.set('health', healthCanvas);
+
+    // Render shield powerup
+    const shieldCanvas = document.createElement('canvas');
+    shieldCanvas.width = 100;
+    shieldCanvas.height = 100;
+    const shieldCtx = shieldCanvas.getContext('2d')!;
+    shieldCtx.strokeStyle = '#00FFFF';
+    shieldCtx.lineWidth = 3;
+    shieldCtx.shadowBlur = 15;
+    shieldCtx.shadowColor = '#00FFFF';
+    // Draw shield shape
+    shieldCtx.beginPath();
+    shieldCtx.moveTo(50, 25);
+    shieldCtx.lineTo(70, 35);
+    shieldCtx.lineTo(70, 60);
+    shieldCtx.lineTo(50, 75);
+    shieldCtx.lineTo(30, 60);
+    shieldCtx.lineTo(30, 35);
+    shieldCtx.closePath();
+    shieldCtx.stroke();
+    this.powerupCanvases.set('shield', shieldCanvas);
+
+    // Render weapon powerups
     Object.values(WEAPONS).forEach(weapon => {
       const canvas = document.createElement('canvas');
       canvas.width = 100;
@@ -105,6 +142,49 @@ export class PowerUpSystem {
           ctx.lineTo(centerX + 22, centerY + offset);
           ctx.stroke();
         }
+
+      } else if (weapon.type === ClientWeaponType.HOMING_MISSILES) {
+        // Three small missiles with target circle
+        ctx.lineWidth = 2.5;
+
+        // Draw 3 small missiles in a spread pattern
+        for (let i = 0; i < 3; i++) {
+          const angle = -0.3 + (i * 0.3);
+          const offsetX = Math.sin(angle) * 15;
+          const offsetY = -Math.cos(angle) * 8;
+
+          ctx.save();
+          ctx.translate(centerX + offsetX, centerY + offsetY);
+
+          // Missile body (small diamond)
+          ctx.beginPath();
+          ctx.moveTo(0, -10);
+          ctx.lineTo(5, 0);
+          ctx.lineTo(0, 10);
+          ctx.lineTo(-5, 0);
+          ctx.closePath();
+          ctx.stroke();
+
+          ctx.restore();
+        }
+
+        // Target reticle
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, 22, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Crosshair
+        ctx.beginPath();
+        ctx.moveTo(centerX - 22, centerY);
+        ctx.lineTo(centerX - 16, centerY);
+        ctx.moveTo(centerX + 16, centerY);
+        ctx.lineTo(centerX + 22, centerY);
+        ctx.moveTo(centerX, centerY - 22);
+        ctx.lineTo(centerX, centerY - 16);
+        ctx.moveTo(centerX, centerY + 16);
+        ctx.lineTo(centerX, centerY + 22);
+        ctx.stroke();
       }
 
       // Universal circle frame for ALL powerups (consistent visual language)
@@ -169,7 +249,14 @@ export class PowerUpSystem {
       pulsePhase: 0,
       collisionRadius: 30
     });
-    console.log(`💎 Power-up spawned: ${WEAPONS[powerUpData.weaponType].name}`);
+
+    if (powerUpData.weaponType) {
+      console.log(`💎 Power-up spawned: ${WEAPONS[powerUpData.weaponType].name}`);
+    } else if (powerUpData.type === PowerUpType.HEALTH) {
+      console.log(`💎 Power-up spawned: HEALTH PACK`);
+    } else if (powerUpData.type === PowerUpType.SHIELD) {
+      console.log(`💎 Power-up spawned: SHIELD`);
+    }
   }
 
   /**
@@ -184,8 +271,24 @@ export class PowerUpSystem {
    */
   render(ctx: CanvasRenderingContext2D): void {
     this.powerups.forEach(powerup => {
-      const weapon = WEAPONS[powerup.weaponType];
-      const canvas = this.powerupCanvases.get(powerup.weaponType);
+      let canvas: HTMLCanvasElement | undefined;
+      let name: string;
+      let color: string;
+
+      if (powerup.type === PowerUpType.WEAPON && powerup.weaponType) {
+        const weapon = WEAPONS[powerup.weaponType];
+        canvas = this.powerupCanvases.get(powerup.weaponType);
+        name = weapon.name;
+        color = weapon.color;
+      } else if (powerup.type === PowerUpType.HEALTH) {
+        canvas = this.powerupCanvases.get('health');
+        name = 'HEALTH';
+        color = '#00FF00';
+      } else if (powerup.type === PowerUpType.SHIELD) {
+        canvas = this.powerupCanvases.get('shield');
+        name = 'SHIELD';
+        color = '#00FFFF';
+      }
 
       if (canvas) {
         // Pulsing scale
@@ -197,14 +300,14 @@ export class PowerUpSystem {
         ctx.drawImage(canvas, -50, -50);
         ctx.restore();
 
-        // Weapon name below (still dynamic text, but simpler)
+        // Name below
         ctx.save();
-        ctx.fillStyle = weapon.color;
+        ctx.fillStyle = color!;
         ctx.font = 'bold 12px Arial';
         ctx.textAlign = 'center';
         ctx.shadowBlur = 5;
         ctx.shadowColor = '#000000';
-        ctx.fillText(weapon.name, powerup.x, powerup.y + 30 * scale + 15);
+        ctx.fillText(name!, powerup.x, powerup.y + 30 * scale + 15);
         ctx.restore();
       }
     });

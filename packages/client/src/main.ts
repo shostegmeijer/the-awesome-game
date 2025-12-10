@@ -86,7 +86,7 @@ const lasers = new LaserSystem();
 const camera = new Camera(window.innerWidth, window.innerHeight);
 
 // Track local cursor position (bright cyan for visibility)
-let localCursor = { x: 0, y: 0, rotation: 0, health: 100, color: '#00FFFF', label: 'You' };
+let localCursor = { x: 0, y: 0, rotation: 0, health: 100, color: '#00FFFF', label: 'You', shield: 0 };
 let targetPosition = { x: 0, y: 0 }; // Mouse target position
 let respawnTimeEnd = 0; // Timestamp when respawn happens
 let isDead = false; // Track death state
@@ -162,10 +162,11 @@ controls.onAction('shoot', () => {
   // Get bullet data based on current weapon
   const bulletData = weaponManager.getBulletData(localCursor.x, localCursor.y, localCursor.rotation);
   const isRocket = weapon.type === WeaponType.ROCKET;
+  const isHoming = weapon.type === WeaponType.HOMING_MISSILES;
 
   // Spawn bullets locally and send to server
   bulletData.forEach(({ angle }) => {
-    bullets.shoot(localCursor.x, localCursor.y, angle, socket.getSocketId() || 'local', weapon.color, isRocket);
+    bullets.shoot(localCursor.x, localCursor.y, angle, socket.getSocketId() || 'local', weapon.color, isRocket, isHoming);
     socket.emitBulletShoot(localCursor.x, localCursor.y, angle, isRocket);
   });
 
@@ -218,7 +219,7 @@ socket.onUserLeft((data) => {
 socket.onCursorsSync((data) => {
   const mySocketId = socket.getSocketId();
   // Filter out our own cursor before syncing
-  const filteredCursors: Record<string, { x: number; y: number; color: string; label: string }> = {};
+  const filteredCursors: typeof data.cursors = {};
   Object.entries(data.cursors).forEach(([userId, cursor]) => {
     if (userId !== mySocketId) {
       filteredCursors[userId] = cursor;
@@ -340,8 +341,12 @@ socket.onHealthUpdate((data) => {
   const myId = socket.getSocketId();
   if (data.userId === myId || data.userId === 'local') {
     const oldHealth = localCursor.health;
+    const oldShield = localCursor.shield;
     localCursor.health = data.health;
-    console.log(`❤️ My health updated: ${oldHealth} → ${localCursor.health}`);
+    if (typeof data.shield === 'number') {
+      localCursor.shield = data.shield;
+    }
+    console.log(`❤️ My health updated: ${oldHealth} → ${localCursor.health}, shield: ${oldShield} → ${localCursor.shield}`);
 
     // Visual feedback for taking damage
     if (localCursor.health < oldHealth && localCursor.health > 0) {
@@ -454,16 +459,29 @@ socket.on('powerup:sync', (data) => {
 socket.on('powerup:collect', (data) => {
   powerUps.removePowerUp(data.powerUpId);
 
-  const weapon = WEAPONS[data.weaponType];
+  const myId = socket.getSocketId() || 'local';
+  const isMe = data.userId === myId;
 
-  // If we collected it
-  if (data.userId === socket.getSocketId() || data.userId === 'local') {
-    weaponManager.setWeapon(data.weaponType); // One-time use
-    announcements.announcePowerUp(weapon.name, weapon.icon);
-    scoreManager.addPoints(socket.getSocketId() || 'local', 50);
+  if (data.type === 'weapon' && data.weaponType) {
+    const weapon = WEAPONS[data.weaponType];
+    if (isMe) {
+      weaponManager.setWeapon(data.weaponType);
+      announcements.announcePowerUp(weapon.name, weapon.icon);
+      scoreManager.addPoints(myId, 50);
+    }
+    console.log(`✨ Collected: ${weapon.name} by ${data.userId}`);
+  } else if (data.type === 'health') {
+    if (isMe) {
+      announcements.announcePowerUp('HEALTH PACK', '❤️');
+    }
+    console.log(`✨ Collected: HEALTH PACK by ${data.userId}`);
+  } else if (data.type === 'shield') {
+    if (isMe) {
+      localCursor.shield = 30;
+      announcements.announcePowerUp('SHIELD', '🛡️');
+    }
+    console.log(`✨ Collected: SHIELD by ${data.userId}`);
   }
-
-  console.log(`✨ Collected: ${weapon.name} by ${data.userId}`);
 });
 
 // Handle remote lasers
@@ -644,8 +662,23 @@ canvas.startRenderLoop(() => {
   // Update explosions
   explosions.update();
 
-  // Update bullets and apply grid forces
-  bullets.update();
+  // Update bullets with target tracking for homing missiles
+  bullets.update(() => {
+    const targets: Array<{ id: string; x: number; y: number; health: number }> = [];
+
+    // Add all remote cursors as potential targets
+    cursors.getCursors().forEach((cursor, id) => {
+      targets.push({ id, x: cursor.x, y: cursor.y, health: cursor.health });
+    });
+
+    // Add local player as potential target
+    if (localCursor.health > 0) {
+      const myId = socket.getSocketId() || 'local';
+      targets.push({ id: myId, x: localCursor.x, y: localCursor.y, health: localCursor.health });
+    }
+
+    return targets;
+  });
 
   // Apply forces from bullets to grid
   bullets.getBullets().forEach(bullet => {
@@ -924,7 +957,7 @@ canvas.startRenderLoop(() => {
       particles.spawn(localCursor.x, localCursor.y, localCursor.rotation, '#FF6600', speed);
     }
 
-    canvas.drawCursor(localCursor.x, localCursor.y, localCursor.color, localCursor.label, localCursor.rotation, localCursor.health, 'player');
+    canvas.drawCursor(localCursor.x, localCursor.y, localCursor.color, localCursor.label, localCursor.rotation, localCursor.health, 'player', localCursor.shield);
   }
 
   // Render all remote cursors with rotation and spawn their particles
@@ -943,7 +976,7 @@ canvas.startRenderLoop(() => {
       particles.spawn(cursor.x, cursor.y, cursor.rotation, '#FF6600', speed);
     }
 
-    canvas.drawCursor(cursor.x, cursor.y, cursor.color, cursor.label, cursor.rotation, cursor.health, cursor.type || 'player');
+    canvas.drawCursor(cursor.x, cursor.y, cursor.color, cursor.label, cursor.rotation, cursor.health, cursor.type || 'player', cursor.shield);
   });
 
   // Draw grid overlay AFTER everything to pick up glow

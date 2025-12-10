@@ -28,6 +28,7 @@ export interface CursorData {
   health: number;
   type: CursorType;
   activeWeapon?: WeaponType;
+  shield?: number;
 }
 
 export interface CursorsSyncPayload {
@@ -44,6 +45,7 @@ export interface CursorUpdatePayload {
   health: number;
   type: CursorType;
   activeWeapon?: WeaponType;
+  shield?: number;
 }
 
 export type CursorType = 'player' | 'bot';
@@ -72,6 +74,7 @@ export interface BulletUpdatePayload {
 export interface HealthUpdatePayload {
   userId: string;
   health: number;
+  shield?: number;
   attackerId?: string;
 }
 
@@ -82,7 +85,15 @@ export enum WeaponType {
   TRIPLE_SHOT = 'tripleShot',
   SHOTGUN = 'shotgun',
   ROCKET = 'rocket',
-  LASER = 'laser'
+  LASER = 'laser',
+  HOMING_MISSILES = 'homingMissiles'
+}
+
+// PowerUp Types
+export enum PowerUpType {
+  WEAPON = 'weapon',
+  HEALTH = 'health',
+  SHIELD = 'shield'
 }
 
 // Mine Data
@@ -98,7 +109,8 @@ export interface PowerUpData {
   id: string;
   x: number;
   y: number;
-  weaponType: WeaponType;
+  type: PowerUpType;
+  weaponType?: WeaponType; // Only for weapon powerups
 }
 
 // Event Payloads
@@ -112,7 +124,8 @@ export interface MineExplodePayload {
 export interface PowerUpCollectPayload {
   powerUpId: string;
   userId: string;
-  weaponType: WeaponType;
+  type: PowerUpType;
+  weaponType?: WeaponType;
 }
 
 export interface WeaponExplodePayload {
@@ -200,10 +213,11 @@ export interface ServerToClientEvents {
   'admin:kickPlayer:ok': (data: { kicked: string }) => void;
   'admin:kickPlayer:error': (data: AdminErrorPayload) => void;
   'admin:settings': (data: AdminSettingsPayload) => void;
+  'admin:endGame:ok': (data: AdminEndGamePayload) => void;
+  'admin:endGame:error': (data: AdminErrorPayload) => void;
   'player:respawn': (data: PlayerRespawnPayload) => void;
   'player:killed': (data: PlayerKilledPayload) => void;
   'player:info': (data: PlayerInfoPayload) => void;
-  'knockback': (data: KnockbackPayload) => void;
 }
 
 export interface PlayerKilledPayload {
@@ -251,6 +265,7 @@ export interface ClientToServerEvents {
   'admin:kickPlayer': (data: { token: string, id: string }) => void;
   'admin:getSettings': (data: { token: string }) => void;
   'admin:updateSettings': (data: { token: string, settings: Partial<AdminSettingsPayload> }) => void;
+  'admin:endGame': (data: { token: string }) => void;
 }
 
 // --- Admin channel event maps ---
@@ -268,5 +283,11 @@ export interface AdminSettingsPayload {
   botCount: number;
   botHealth: number;
   playerStartingHealth: number;
+}
+
+export interface AdminEndGamePayload {
+  submitted: number;
+  failed: number;
+  total: number;
 }
 

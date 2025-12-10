@@ -7,7 +7,8 @@ export enum WeaponType {
   TRIPLE_SHOT = 'tripleShot',
   SHOTGUN = 'shotgun',
   ROCKET = 'rocket',
-  LASER = 'laser'
+  LASER = 'laser',
+  HOMING_MISSILES = 'homingMissiles'
 }
 
 export interface WeaponConfig {
@@ -88,6 +89,19 @@ export const WEAPONS: Record<WeaponType, WeaponConfig> = {
     spread: 0,
     bulletLifetime: 120, // 2 seconds at 60fps
     icon: '🔥',
+    maxAmmo: 3
+  },
+  [WeaponType.HOMING_MISSILES]: {
+    type: WeaponType.HOMING_MISSILES,
+    name: 'Homing Missiles',
+    color: '#FF00AA',
+    cooldown: 0, // One-time use
+    damage: 80,
+    bulletSpeed: 8, // Medium speed
+    bulletCount: 3, // Fire 3 missiles
+    spread: 0.15, // Slight spread
+    bulletLifetime: 240, // 4 seconds to track
+    icon: '🎯',
     maxAmmo: 3
   }
 };

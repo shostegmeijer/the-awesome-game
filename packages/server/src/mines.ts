@@ -194,14 +194,26 @@ export class MineSystem {
                     });
                 }
 
-                // Apply damage
+                // Apply damage with shield absorption
                 const oldHealth = user.health;
-                const newHealth = Math.max(0, user.health - mine.damage);
+                let damage = mine.damage;
+
+                // Shield absorbs damage first
+                if ((user as any).shield > 0) {
+                    const shieldDamage = Math.min((user as any).shield, damage);
+                    (user as any).shield -= shieldDamage;
+                    damage -= shieldDamage;
+                    console.log(`🛡️ ${user.label} shield absorbed ${shieldDamage} mine damage (${(user as any).shield} remaining)`);
+                }
+
+                // Apply remaining damage to health
+                const newHealth = Math.max(0, user.health - damage);
                 updateHealth(user.id, newHealth);
 
                 this.io.emit('health:update', {
                     userId: user.id,
-                    health: newHealth
+                    health: newHealth,
+                    shield: (user as any).shield || 0
                 });
 
                 if (oldHealth > 0 && newHealth <= 0) {

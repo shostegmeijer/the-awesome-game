@@ -13,6 +13,8 @@ interface Bullet {
   color: string;
   ownerId: string; // Who shot this bullet
   isRocket?: boolean; // Special rocket projectile
+  isHoming?: boolean; // Homing missile that tracks targets
+  targetId?: string; // Current target for homing missiles
 }
 
 export class BulletSystem {
@@ -67,7 +69,7 @@ export class BulletSystem {
   /**
    * Spawn a bullet from a position in a direction
    */
-  shoot(x: number, y: number, angle: number, ownerId: string = 'local', color: string = '#00FFFF', isRocket: boolean = false): void {
+  shoot(x: number, y: number, angle: number, ownerId: string = 'local', color: string = '#00FFFF', isRocket: boolean = false, isHoming: boolean = false): void {
     // Calculate velocity from angle
     const vx = Math.cos(angle) * this.bulletSpeed;
     const vy = Math.sin(angle) * this.bulletSpeed;
@@ -80,7 +82,8 @@ export class BulletSystem {
       lifetime: 0,
       color,
       ownerId,
-      isRocket
+      isRocket,
+      isHoming
     });
 
     // Remove old bullets if we exceed max
@@ -112,8 +115,56 @@ export class BulletSystem {
   /**
    * Update all bullets
    */
-  update(): void {
+  update(getTargets?: () => Array<{ id: string; x: number; y: number; health: number }>): void {
     this.bullets.forEach(bullet => {
+      // Homing missile behavior
+      if (bullet.isHoming && getTargets) {
+        const targets = getTargets().filter(t => t.id !== bullet.ownerId && t.health > 0);
+
+        // Find nearest target or keep current target
+        let target = targets.find(t => t.id === bullet.targetId);
+
+        if (!target || target.health <= 0) {
+          // Find new closest target
+          let closestDist = Infinity;
+          targets.forEach(t => {
+            const dx = t.x - bullet.x;
+            const dy = t.y - bullet.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < closestDist) {
+              closestDist = dist;
+              target = t;
+            }
+          });
+
+          bullet.targetId = target?.id;
+        }
+
+        // Steer towards target
+        if (target) {
+          const dx = target.x - bullet.x;
+          const dy = target.y - bullet.y;
+          const targetAngle = Math.atan2(dy, dx);
+
+          // Current velocity angle
+          const currentAngle = Math.atan2(bullet.vy, bullet.vx);
+
+          // Calculate angle difference and normalize to [-PI, PI]
+          let angleDiff = targetAngle - currentAngle;
+          while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+          while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+
+          // Apply steering (gradually turn towards target)
+          const turnRate = 0.08; // How fast missile can turn
+          const newAngle = currentAngle + angleDiff * turnRate;
+
+          // Update velocity to new direction (maintain speed)
+          const speed = Math.sqrt(bullet.vx * bullet.vx + bullet.vy * bullet.vy);
+          bullet.vx = Math.cos(newAngle) * speed;
+          bullet.vy = Math.sin(newAngle) * speed;
+        }
+      }
+
       // Move bullet
       bullet.x += bullet.vx;
       bullet.y += bullet.vy;
@@ -158,7 +209,7 @@ export class BulletSystem {
       // Calculate angle based on velocity
       const angle = Math.atan2(bullet.vy, bullet.vx);
 
-      if (bullet.isRocket) {
+      if (bullet.isRocket || bullet.isHoming) {
         // Render rocket as big glowing circle
         ctx.save();
         const pulse = 1 + Math.sin(bullet.lifetime * 0.3) * 0.2;

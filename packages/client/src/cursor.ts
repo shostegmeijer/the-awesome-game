@@ -15,6 +15,7 @@ interface RemoteCursor {
   label: string;
   type?: 'player' | 'bot';
   lastSeen: number;
+  shield: number; // Shield HP
 }
 
 export class CursorManager {
@@ -39,7 +40,7 @@ export class CursorManager {
   /**
    * Update cursor target position from network (actual interpolation happens in update())
    */
-  updateCursor(userId: string, x: number, y: number, color?: string, label?: string, health?: number, type?: 'player' | 'bot', rotation?: number): void {
+  updateCursor(userId: string, x: number, y: number, color?: string, label?: string, health?: number, type?: 'player' | 'bot', rotation?: number, shield?: number): void {
     const existing = this.cursors.get(userId);
 
     if (existing) {
@@ -53,6 +54,7 @@ export class CursorManager {
         health: typeof health === 'number' ? health : existing.health,
         type: typeof type !== 'undefined' ? type : existing.type,
         rotation: typeof rotation === 'number' ? rotation : existing.rotation,
+        shield: typeof shield === 'number' ? shield : existing.shield,
         lastSeen: Date.now()
       });
     } else {
@@ -69,6 +71,7 @@ export class CursorManager {
         color: color || '#fff',
         label: label || 'Unknown',
         type,
+        shield: typeof shield === 'number' ? shield : 0,
         lastSeen: Date.now()
       });
       console.log(`👤 New cursor: ${label || 'Unknown'} (${userId})`);
@@ -158,9 +161,9 @@ export class CursorManager {
   /**
    * Sync cursors from initial state
    */
-  syncCursors(cursorsData: Record<string, { x: number; y: number; color: string; label: string; health: number; rotation?: number; type?: 'player' | 'bot' }>): void {
+  syncCursors(cursorsData: Record<string, { x: number; y: number; color: string; label: string; health: number; rotation?: number; type?: 'player' | 'bot'; shield?: number }>): void {
     Object.entries(cursorsData).forEach(([userId, data]) => {
-      this.updateCursor(userId, data.x, data.y, data.color, data.label, data.health, data.type, data.rotation);
+      this.updateCursor(userId, data.x, data.y, data.color, data.label, data.health, data.type, data.rotation, data.shield);
     });
     console.log(`🔄 Synced ${Object.keys(cursorsData).length} cursors`);
   }
