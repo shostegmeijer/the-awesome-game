@@ -1,14 +1,12 @@
+import { ClientToServerEvents, CursorData, ServerToClientEvents } from '@awesome-game/shared';
 import { Server, Socket } from 'socket.io';
-import {
-  ServerToClientEvents,
-  ClientToServerEvents,
-  CursorData
-} from '@awesome-game/shared';
-import { addUser, removeUser, updateCursor, getAllUsers, updateHealth } from './state.js';
+import { BotSystem } from './bots.js';
+import { BulletSystem } from './bullets.js';
+import { ADMIN_PASSWORD } from './index.js';
+import { LaserSystem } from './lasers.js';
 import { MineSystem } from './mines.js';
 import { PowerUpSystem } from './powerups.js';
-import { BulletSystem } from './bullets.js';
-import { LaserSystem } from './lasers.js';
+import { addBot, addUser, getAllBots, getAllUsers, getSettings, removeBot, removeUser, setBotHealth, updateCursor, updateHealth, updateSettings } from './state.js';
 
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents>;
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
@@ -17,10 +15,13 @@ type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
  * Initialize Socket.io event handlers
  */
 export function initializeSocketHandlers(io: TypedServer): void {
+  // Track player respawn timers
+  const playerRespawnAt = new Map<string, number>();
   // Initialize game systems
   const mineSystem = new MineSystem(io);
   const powerUpSystem = new PowerUpSystem(io);
   const bulletSystem = new BulletSystem();
+  const botSystem = new BotSystem(io, bulletSystem);
   const laserSystem = new LaserSystem(mineSystem);
 
   // Start server-side game loop (60 TPS)
@@ -30,7 +31,7 @@ export function initializeSocketHandlers(io: TypedServer): void {
     bulletSystem.update();
     laserSystem.update();
 
-    // Check collisions
+    // Check collisions and handle respawns
     const users = getAllUsers();
 
     // Check powerup collection
@@ -45,33 +46,80 @@ export function initializeSocketHandlers(io: TypedServer): void {
       if (hitMineId) {
         mineSystem.explodeMine(hitMineId, user.id);
       }
+
+      // Handle player respawn timing
+      if (user.health <= 0) {
+        const when = playerRespawnAt.get(user.id);
+        if (!when) {
+          playerRespawnAt.set(user.id, Date.now() + 3000); // 3s respawn
+        } else if (Date.now() >= when) {
+          const s = getSettings();
+          const newHealth = updateHealth(user.id, s.playerStartingHealth);
+          if (newHealth !== null) {
+            io.emit('health:update', { userId: user.id, health: newHealth });
+          }
+          playerRespawnAt.delete(user.id);
+        }
+      }
     });
 
-    // Check bullet collisions with mines
+    // Check bullet collisions with mines, users, and bots
     bulletSystem.getBullets().forEach(bullet => {
+      // Mines
       const hitMineId = mineSystem.checkBulletCollision(bullet.x, bullet.y);
       if (hitMineId) {
         mineSystem.explodeMine(hitMineId, bullet.userId);
         bulletSystem.removeBullet(bullet.id);
+        return;
+      }
+
+      // Users
+      const USER_RADIUS = 25;
+      const usersMap = getAllUsers();
+      for (const user of usersMap.values()) {
+        const dx = bullet.x - user.x;
+        const dy = bullet.y - user.y;
+        const dist2 = dx * dx + dy * dy;
+        if (dist2 <= USER_RADIUS * USER_RADIUS) {
+          bulletSystem.removeBullet(bullet.id);
+          const newHealth = updateHealth(user.id, Math.max(0, user.health - 10));
+          if (newHealth !== null) {
+            io.emit('health:update', { userId: user.id, health: newHealth });
+          }
+          return;
+        }
+      }
+
+      // Bots
+      const BOT_RADIUS = 25;
+      const bots = getAllBots();
+      for (const bot of bots) {
+        const dx = bullet.x - bot.x;
+        const dy = bullet.y - bot.y;
+        const dist2 = dx * dx + dy * dy;
+        if (dist2 <= BOT_RADIUS * BOT_RADIUS) {
+          bulletSystem.removeBullet(bullet.id);
+          const newHealth = Math.max(0, bot.health - 10);
+          setBotHealth(bot.id, newHealth);
+          io.emit('health:update', { userId: bot.id, health: newHealth });
+          return;
+        }
       }
     });
-
   }, 16); // 16ms = ~60 updates per second
 
   io.on('connection', (socket: TypedSocket) => {
     console.log(`🔌 User connected: ${socket.id}`);
 
     // Add user to state
-    const user = addUser(socket.id);
+    addUser(socket.id);
+    // Apply starting health from settings
+    const s = getSettings();
+    updateHealth(socket.id, s.playerStartingHealth);
 
-    // Notify other clients about the new user
-    socket.broadcast.emit('user:joined', {
-      userId: user.id,
-      color: user.color,
-      label: user.label
-    });
+    // Notify other clients about the new user (skipped; cursors:sync will reflect state)
 
-    // Send current users to the new client
+    // Send current users (excluding self) to the new client
     const cursors: Record<string, CursorData> = {};
     getAllUsers().forEach((u, id) => {
       if (id !== socket.id) {
@@ -81,9 +129,22 @@ export function initializeSocketHandlers(io: TypedServer): void {
           rotation: u.rotation,
           color: u.color,
           label: u.label,
-          health: u.health
+          health: u.health,
+          type: 'player',
         };
       }
+    });
+    // Include bots in initial cursors sync
+    getAllBots().forEach(bot => {
+      cursors[bot.id] = {
+        x: bot.x,
+        y: bot.y,
+        rotation: 0,
+        color: '#FF00FF',
+        label: bot.label,
+        health: bot.health,
+        type: 'bot',
+      };
     });
     socket.emit('cursors:sync', { cursors });
 
@@ -105,7 +166,11 @@ export function initializeSocketHandlers(io: TypedServer): void {
         userId: socket.id,
         x,
         y,
-        rotation: rotation || 0
+        rotation: rotation || 0,
+        color: getAllUsers().get(socket.id)?.color || '#ffffff',
+        label: getAllUsers().get(socket.id)?.label || 'Player',
+        health: getAllUsers().get(socket.id)?.health || 100,
+        type: 'player',
       });
     });
 
@@ -138,7 +203,7 @@ export function initializeSocketHandlers(io: TypedServer): void {
     });
 
     // Handle laser shooting
-    socket.on('laser:shoot', ({ x, y, angle }) => {
+    socket.on('laser:shoot', ({ angle }) => {
       const user = getAllUsers().get(socket.id);
       if (!user) return;
 
@@ -165,4 +230,74 @@ export function initializeSocketHandlers(io: TypedServer): void {
       io.emit('user:left', { userId: socket.id });
     });
   });
+
+  function isAuthorized(token?: string): boolean {
+    return !!token && token === ADMIN_PASSWORD;
+  }
+
+  io.on('connection', (socket) => {
+    socket.on('admin:login', ({ password }: { password: string }) => {
+      if (password === ADMIN_PASSWORD) {
+        socket.emit('admin:login:ok', { token: ADMIN_PASSWORD });
+      } else {
+        socket.emit('admin:login:error', { error: 'Invalid password' });
+      }
+    });
+
+    socket.on('admin:getPlayers', ({ token }: { token: string }) => {
+      if (!isAuthorized(token)) return socket.emit('admin:error', { error: 'Unauthorized' });
+      const players = Array.from(getAllUsers().values()).map(u => ({
+        id: u.id,
+        label: u.label,
+        x: u.x,
+        y: u.y,
+        health: u.health,
+        points: u.points
+      }));
+      socket.emit('admin:players', { players });
+    });
+
+    socket.on('admin:getBots', ({ token }: { token: string }) => {
+      if (!isAuthorized(token)) return socket.emit('admin:error', { error: 'Unauthorized' });
+      socket.emit('admin:bots', { bots: getAllBots() });
+    });
+
+    socket.on('admin:addBot', ({ token }: { token: string }) => {
+      if (!isAuthorized(token)) return socket.emit('admin:error', { error: 'Unauthorized' });
+      const bot = addBot(getSettings().botHealth);
+      // Also increase desired botCount so the maintenance loop keeps it
+      const s = getSettings();
+      updateSettings({ botCount: s.botCount + 1 });
+      socket.emit('admin:bots', { bots: getAllBots() });
+      socket.emit('admin:addBot:ok', { bot });
+    });
+
+    socket.on('admin:removeBot', ({ token, id }: { token: string, id: string }) => {
+      if (!isAuthorized(token)) return socket.emit('admin:error', { error: 'Unauthorized' });
+      const ok = removeBot(id);
+      if (!ok) return socket.emit('admin:removeBot:error', { error: 'bot not found', id });
+      // Also decrease desired botCount
+      const s = getSettings();
+      updateSettings({ botCount: Math.max(0, s.botCount - 1) });
+      socket.emit('admin:bots', { bots: getAllBots() });
+      socket.emit('admin:removeBot:ok', { removed: id });
+    });
+
+    // Settings get/set
+    socket.on('admin:getSettings', ({ token }: { token: string }) => {
+      if (!isAuthorized(token)) return socket.emit('admin:error', { error: 'Unauthorized' });
+      socket.emit('admin:settings', getSettings());
+    });
+    socket.on('admin:updateSettings', ({ token, settings }: { token: string, settings: Partial<ReturnType<typeof getSettings>> }) => {
+      if (!isAuthorized(token)) return socket.emit('admin:error', { error: 'Unauthorized' });
+      const updated = updateSettings(settings);
+      socket.emit('admin:settings', updated);
+    });
+  });
+
+  // Start bots system and periodically refresh admin bots table
+  botSystem.start();
+  setInterval(() => {
+    io.emit('admin:bots', { bots: getAllBots() });
+  }, 500);
 }

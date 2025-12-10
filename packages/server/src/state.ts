@@ -8,6 +8,7 @@ export interface UserState {
   y: number;
   rotation: number;
   health: number;
+  points: number;
   lastUpdate: number;
   weaponType: string; // Track current weapon
   radius: number; // Collision radius
@@ -29,6 +30,7 @@ export function addUser(id: string): UserState {
     y: 0,
     rotation: 0,
     health: 100,
+    points: 0,
     lastUpdate: Date.now(),
     weaponType: 'machineGun',
     radius: 25 // Standard ship radius
@@ -80,6 +82,88 @@ export function updateHealth(id: string, health: number): number | null {
     return user.health;
   }
   return null;
+}
+
+/**
+ * Update user points
+ */
+export function updatePoints(id: string, pointsDelta: number): number | null {
+  const user = users.get(id);
+  if (user) {
+    user.points = Math.max(0, user.points + pointsDelta);
+    return user.points;
+  }
+  return null;
+}
+
+// --- Bot management (simple in-memory placeholders) ---
+export interface BotState {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  health: number;
+  heading: number; // radians
+}
+
+const bots = new Map<string, BotState>();
+let botLabelCounter = 0;
+
+export function addBot(initialHealth: number = 50): BotState {
+  const id = `bot-${Date.now()}-${Math.floor(Math.random()*10000)}`;
+  const mapWidth = 2000, mapHeight = 2000, padding = 100;
+  const x = padding + Math.random() * (mapWidth - padding * 2);
+  const y = padding + Math.random() * (mapHeight - padding * 2);
+  const bot: BotState = { id, label: `Bot ${++botLabelCounter}`, x, y, health: initialHealth, heading: Math.random() * Math.PI * 2 };
+  bots.set(id, bot);
+  console.log(`🤖 Bot added: ${bot.label} (${bot.id})`);
+  return bot;
+}
+
+export function removeBot(id: string): boolean {
+  const existed = bots.delete(id);
+  if (existed) console.log(`🗑️ Bot removed: ${id}`);
+  return existed;
+}
+
+export function getAllBots(): BotState[] {
+  return Array.from(bots.values());
+}
+
+export function setBotPosition(id: string, x: number, y: number) {
+  const bot = bots.get(id);
+  if (bot) { bot.x = x; bot.y = y; }
+}
+
+export function setBotHealth(id: string, health: number) {
+  const bot = bots.get(id);
+  if (bot) { bot.health = Math.max(0, Math.min(100, health)); }
+}
+
+export function setBotHeading(id: string, heading: number) {
+  const bot = bots.get(id);
+  if (bot) { bot.heading = heading; }
+}
+
+// Admin-configurable settings
+export interface GameSettings {
+  botSpeed: number; // pixels per tick
+  botCount: number;
+  botHealth: number;
+  playerStartingHealth: number;
+}
+
+let settings: GameSettings = {
+  botSpeed: 4.0,
+  botCount: 0,
+  botHealth: 50,
+  playerStartingHealth: 100
+};
+
+export function getSettings(): GameSettings { return settings; }
+export function updateSettings(partial: Partial<GameSettings>): GameSettings {
+  settings = { ...settings, ...partial };
+  return settings;
 }
 
 /**

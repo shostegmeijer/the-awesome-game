@@ -1,5 +1,5 @@
-import { DEFAULT_SHIP_SHAPE, drawShipShape, type ShipShape } from './shapes.js';
 import { ReactiveGrid } from './grid.js';
+import { DEFAULT_SHIP_SHAPE, drawShipShape, type ShipShape } from './shapes.js';
 
 /**
  * Canvas manager for rendering cursors
@@ -96,9 +96,45 @@ export class CanvasManager {
   /**
    * Draw a cursor at the specified position (Geometry Wars style)
    */
-  drawCursor(x: number, y: number, color: string, label: string, rotation: number = 0, health: number = 100): void {
-    // Draw ship using configurable shape
-    drawShipShape(this.ctx, this.shipShape, x, y, rotation, color);
+  drawCursor(x: number, y: number, color: string, label: string, rotation: number = 0, health: number = 100, type: 'player' | 'bot'): void {
+    // Render based on cursor type
+    if (type === 'bot') {
+      // Hexagon for bots
+      const r = 20;
+      this.ctx.save();
+      this.ctx.shadowBlur = 12;
+      this.ctx.shadowColor = color;
+      this.ctx.strokeStyle = color;
+      this.ctx.lineWidth = 3;
+      this.ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const angle = (Math.PI / 3) * i; // 0,60,...300 degrees
+        const px = x + Math.cos(angle) * r;
+        const py = y + Math.sin(angle) * r;
+        if (i === 0) this.ctx.moveTo(px, py); else this.ctx.lineTo(px, py);
+      }
+      this.ctx.closePath();
+      this.ctx.stroke();
+      this.ctx.restore();
+    } else {
+      // Player ship using existing shape
+      drawShipShape(this.ctx, this.shipShape, x, y, rotation, color);
+
+      // Direction dash indicating facing
+      const dashLen = 18;
+      const tipX = x + Math.cos(rotation) * 26;
+      const tipY = y + Math.sin(rotation) * 26;
+      const tailX = x + Math.cos(rotation) * (26 - dashLen);
+      const tailY = y + Math.sin(rotation) * (26 - dashLen);
+      this.ctx.save();
+      this.ctx.strokeStyle = color;
+      this.ctx.lineWidth = 2;
+      this.ctx.beginPath();
+      this.ctx.moveTo(tailX, tailY);
+      this.ctx.lineTo(tipX, tipY);
+      this.ctx.stroke();
+      this.ctx.restore();
+    }
 
     // Save context for UI elements
     this.ctx.save();

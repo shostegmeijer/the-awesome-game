@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Awesome Game Admin</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 20px;
+        background: #0b0e12;
+        color: #e6edf3;
+      }
+      h1 {
+        margin: 0 0 16px;
+      }
+      .card {
+        background: #12161c;
+        border: 1px solid #2a3240;
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      input[type='password'] {
+        padding: 8px;
+        border-radius: 6px;
+        border: 1px solid #2a3240;
+        background: #0b0e12;
+        color: #e6edf3;
+      }
+      button {
+        padding: 8px 12px;
+        border-radius: 6px;
+        border: 1px solid #2a3240;
+        background: #1b2330;
+        color: #e6edf3;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #243048;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 6px 8px;
+        border-bottom: 1px solid #2a3240;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .section-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .muted {
+        color: #a1adc5;
+      }
+      .hidden {
+        display: none;
+      }
+      .mt8 {
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Admin Panel</h1>
+    <div class="card" id="loginCard">
+      <div class="row">
+        <input type="password" id="password" placeholder="Admin password" />
+        <button id="loginBtn">Login</button>
+        <span class="muted" id="loginStatus"></span>
+      </div>
+      <div class="muted">Token stored locally to auto-login.</div>
+    </div>
+
+    <div class="card" id="playersCard">
+      <div class="section-title hidden" id="playersHeader">
+        <h2>Players</h2>
+        <button id="refreshPlayers">Refresh</button>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Label</th>
+            <th>X</th>
+            <th>Y</th>
+            <th>Health</th>
+            <th>Points</th>
+          </tr>
+        </thead>
+        <tbody id="playersBody"></tbody>
+      </table>
+    </div>
+
+    <div class="card" id="botsCard">
+      <div class="section-title hidden" id="botsHeader">
+        <h2>Bots</h2>
+        <div class="row">
+          <button id="addBot">Add Bot</button>
+          <button id="refreshBots">Refresh</button>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Label</th>
+            <th>X</th>
+            <th>Y</th>
+            <th>Health</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="botsBody"></tbody>
+      </table>
+    </div>
+
+    <div class="card hidden" id="settingsCard">
+      <h2>Game Management</h2>
+      <div class="muted">Bots and player settings</div>
+      <div class="row mt8">
+        <label>Bot Speed <input type="number" id="botSpeed" step="0.1" min="0" value="0.5" /></label>
+        <label>Bot Count <input type="number" id="botCount" min="0" value="0" /></label>
+        <label>Bot Health <input type="number" id="botHealth" min="1" max="100" value="50" /></label>
+        <label>Player Start Health <input type="number" id="playerStartingHealth" min="1" max="100" value="100" /></label>
+        <button id="saveSettings">Save</button>
+      </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const adminSocket = io();
+      const tokenKey = 'adminToken';
+      const setToken = (t) => localStorage.setItem(tokenKey, t);
+      const getToken = () => localStorage.getItem(tokenKey);
+
+      function login(password) {
+        adminSocket.emit('admin:login', { password });
+      }
+
+      function requestPlayers() {
+        adminSocket.emit('admin:getPlayers', { token: getToken() });
+      }
+
+      function requestBots() {
+        adminSocket.emit('admin:getBots', { token: getToken() });
+      }
+
+      function addBot() {
+        adminSocket.emit('admin:addBot', { token: getToken() });
+      }
+
+      function removeBot(id) {
+        adminSocket.emit('admin:removeBot', { token: getToken(), id });
+      }
+
+      // Event handlers
+      function showAuthedUI() {
+        document.getElementById('playersHeader').classList.remove('hidden');
+        document.getElementById('botsHeader').classList.remove('hidden');
+        document.getElementById('settingsCard').classList.remove('hidden');
+      }
+
+      adminSocket.on('admin:login:ok', ({ token }) => {
+        setToken(token);
+        document.getElementById('loginStatus').textContent = 'Logged in';
+        showAuthedUI();
+        requestPlayers();
+        requestBots();
+        adminSocket.emit('admin:getSettings', { token });
+      });
+      adminSocket.on('admin:login:error', ({ error }) => {
+        document.getElementById('loginStatus').textContent = error;
+      });
+      adminSocket.on('admin:error', ({ error }) => {
+        document.getElementById('loginStatus').textContent = error;
+      });
+      adminSocket.on('admin:players', ({ players }) => {
+        const tbody = document.getElementById('playersBody');
+        tbody.innerHTML = '';
+        for (const p of players) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${p.id}</td><td>${p.label}</td><td>${p.x.toFixed(0)}</td><td>${p.y.toFixed(0)}</td><td>${
+            p.health
+          }</td><td>${p.points ?? 0}</td>`;
+          tbody.appendChild(tr);
+        }
+      });
+      adminSocket.on('admin:bots', ({ bots }) => {
+        const tbody = document.getElementById('botsBody');
+        tbody.innerHTML = '';
+        for (const b of bots) {
+          const tr = document.createElement('tr');
+          const removeBtn = `<button data-id="${b.id}" class="removeBot">Remove</button>`;
+          tr.innerHTML = `<td>${b.id}</td><td>${b.label}</td><td>${Math.round(b.x)}</td><td>${Math.round(b.y)}</td><td>${
+            b.health
+          }</td><td>${removeBtn}</td>`;
+          tbody.appendChild(tr);
+        }
+      });
+
+      adminSocket.on('admin:settings', (s) => {
+        document.getElementById('botSpeed').value = s.botSpeed;
+        document.getElementById('botCount').value = s.botCount;
+        document.getElementById('botHealth').value = s.botHealth;
+        document.getElementById('playerStartingHealth').value = s.playerStartingHealth;
+      });
+
+      // Wire UI
+      document.getElementById('loginBtn').addEventListener('click', () => {
+        const pw = document.getElementById('password').value;
+        login(pw);
+      });
+      document.getElementById('refreshPlayers').addEventListener('click', () => requestPlayers());
+      document.getElementById('refreshBots').addEventListener('click', () => requestBots());
+      document.getElementById('addBot').addEventListener('click', () => addBot());
+      document.getElementById('botsBody').addEventListener('click', (e) => {
+        const tgt = e.target;
+        if (tgt && tgt.classList.contains('removeBot')) {
+          removeBot(tgt.getAttribute('data-id'));
+        }
+      });
+
+      // Auto-login on load
+      (function init() {
+        const t = getToken();
+        if (t) {
+          document.getElementById('loginStatus').textContent = 'Logged in';
+          showAuthedUI();
+          requestPlayers();
+          requestBots();
+          adminSocket.emit('admin:getSettings', { token: t });
+        }
+      })();
+
+      // Save settings
+      document.getElementById('saveSettings').addEventListener('click', () => {
+        const settings = {
+          botSpeed: parseFloat(document.getElementById('botSpeed').value),
+          botCount: parseInt(document.getElementById('botCount').value, 10),
+          botHealth: parseInt(document.getElementById('botHealth').value, 10),
+          playerStartingHealth: parseInt(document.getElementById('playerStartingHealth').value, 10),
+        };
+        adminSocket.emit('admin:updateSettings', { token: getToken(), settings });
+      });
+    </script>
+  </body>
+</html>
