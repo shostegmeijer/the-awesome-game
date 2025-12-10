@@ -106,13 +106,15 @@ export function initializeSocketHandlers(io: TypedServer): void {
     // Check collisions
     const users = getAllUsers();
 
-    // Check powerup collection and mine collision only for alive players
+    // Check powerup collection and mine collisions (only for alive players)
     users.forEach(user => {
-      if (user.health > 0) {
-        const collectedPowerUp = powerUpSystem.checkCollection(user.x, user.y, user.radius);
-        if (collectedPowerUp) {
-          powerUpSystem.collectPowerUp(collectedPowerUp.id, user.id);
-        }
+      // Skip dead players
+      if (user.health <= 0) return;
+
+      const collectedPowerUp = powerUpSystem.checkCollection(user.x, user.y, user.radius);
+      if (collectedPowerUp) {
+        powerUpSystem.collectPowerUp(collectedPowerUp.id, user.id);
+      }
 
         // Check mine collision with player
         const hitMineId = mineSystem.checkPlayerCollision(user.x, user.y, user.radius);
@@ -121,7 +123,7 @@ export function initializeSocketHandlers(io: TypedServer): void {
         }
       }
       // Player respawn timing handled by handleDeath
-    });
+    );
 
     // Check bullet collisions with mines, users, and bots
     bulletSystem.getBullets().forEach(bullet => {
