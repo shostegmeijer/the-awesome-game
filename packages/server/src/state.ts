@@ -15,6 +15,8 @@ export interface UserState {
   deaths: number;
   playerKey?: string; // INNSPIRE hub player key
   scoreSubmitted: boolean; // Track if score has been submitted to hub
+  vx: number; // Velocity X for physics
+  vy: number; // Velocity Y for physics
 }
 
 import { MAP_WIDTH, MAP_HEIGHT } from '@awesome-game/shared';
@@ -41,7 +43,9 @@ export function addUser(id: string, playerKey?: string): UserState {
     kills: 0,
     deaths: 0,
     playerKey,
-    scoreSubmitted: false
+    scoreSubmitted: false,
+    vx: 0, // Start with no velocity
+    vy: 0
   };
   users.set(id, user);
   console.log(`✅ User added: ${label} (${id}) ${playerKey ? `[${playerKey}]` : ''} - ${color}`);
@@ -166,6 +170,70 @@ export function markScoreSubmitted(id: string): void {
   if (user) {
     user.scoreSubmitted = true;
   }
+}
+
+/**
+ * Apply knockback to a player
+ * Note: This only updates server state. The server must emit 'knockback' event separately.
+ */
+export function applyKnockback(id: string, forceX: number, forceY: number): void {
+  const user = users.get(id);
+  if (user) {
+    user.vx += forceX;
+    user.vy += forceY;
+  }
+}
+
+/**
+ * Get player velocity (for broadcasting knockback)
+ */
+export function getPlayerVelocity(id: string): { vx: number; vy: number } | null {
+  const user = users.get(id);
+  return user ? { vx: user.vx, vy: user.vy } : null;
+}
+
+/**
+ * Update physics for all players (apply velocity and friction)
+ */
+export function updatePhysics(): void {
+  const friction = 0.92; // Higher = less friction (0.92 = gradual slowdown)
+  const maxSpeed = 15; // Cap maximum velocity
+
+  users.forEach(user => {
+    // Apply velocity to position
+    user.x += user.vx;
+    user.y += user.vy;
+
+    // Apply friction (gradual slowdown)
+    user.vx *= friction;
+    user.vy *= friction;
+
+    // Stop if velocity is very small (prevents endless tiny movements)
+    if (Math.abs(user.vx) < 0.01) user.vx = 0;
+    if (Math.abs(user.vy) < 0.01) user.vy = 0;
+
+    // Cap max speed
+    const speed = Math.sqrt(user.vx * user.vx + user.vy * user.vy);
+    if (speed > maxSpeed) {
+      const scale = maxSpeed / speed;
+      user.vx *= scale;
+      user.vy *= scale;
+    }
+
+    // Keep within map bounds
+    const halfW = MAP_WIDTH / 2;
+    const halfH = MAP_HEIGHT / 2;
+    user.x = Math.max(-halfW, Math.min(user.x, halfW));
+    user.y = Math.max(-halfH, Math.min(user.y, halfH));
+
+    // Bounce off walls (reverse velocity if hit boundary)
+    if (user.x <= -halfW || user.x >= halfW) {
+      user.vx *= -0.5; // Reverse and dampen
+    }
+    if (user.y <= -halfH || user.y >= halfH) {
+      user.vy *= -0.5; // Reverse and dampen
+    }
+  });
 }
 
 /**

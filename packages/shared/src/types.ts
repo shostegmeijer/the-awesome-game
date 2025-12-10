@@ -136,6 +136,13 @@ export interface LaserSpawnPayload {
   color: string;
 }
 
+// Payload for knockback
+export interface KnockbackPayload {
+  userId: string;
+  vx: number;
+  vy: number;
+}
+
 // Socket.io event map for type safety
 export interface ServerToClientEvents {
   'user:joined': (data: UserJoinedPayload) => void;
@@ -159,6 +166,7 @@ export interface ServerToClientEvents {
   'player:respawn': (data: PlayerRespawnPayload) => void;
   'player:killed': (data: PlayerKilledPayload) => void;
   'player:info': (data: PlayerInfoPayload) => void;
+  'knockback': (data: KnockbackPayload) => void;
 }
 
 export interface PlayerKilledPayload {
@@ -186,4 +194,5 @@ export interface ClientToServerEvents {
   'bullet:shoot': (data: BulletShootPayload) => void;
   'laser:shoot': (data: LaserShootPayload) => void;
   'health:damage': (data: HealthUpdatePayload) => void;
+  'admin:kickAll': () => void;
 }

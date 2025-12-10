@@ -8,6 +8,7 @@ interface Bullet {
     vx: number;
     vy: number;
     lifetime: number;
+    isRocket: boolean;
 }
 
 export class BulletSystem {
@@ -16,8 +17,9 @@ export class BulletSystem {
     /**
      * Add a new bullet
      */
-    addBullet(id: string, userId: string, x: number, y: number, angle: number): void {
-        const speed = 15;
+    addBullet(id: string, userId: string, x: number, y: number, angle: number, isRocket: boolean = false): void {
+        const speed = isRocket ? 6 : 15; // Rockets slower
+        const lifetime = isRocket ? 180 : 120; // Rockets live longer
         this.bullets.push({
             id,
             userId,
@@ -25,7 +27,8 @@ export class BulletSystem {
             y,
             vx: Math.cos(angle) * speed,
             vy: Math.sin(angle) * speed,
-            lifetime: 120 // 2 seconds at 60fps (approx)
+            lifetime,
+            isRocket
         });
     }
 

@@ -31,13 +31,26 @@ const noKeyWarning = document.getElementById('no-key-warning');
 // Display player key or warning
 if (playerKey) {
   playerKeyDisplay!.textContent = playerKey;
+  startGameBtn!.disabled = false;
 } else {
-  playerKeyDisplay!.textContent = 'STANDALONE MODE';
+  playerKeyDisplay!.textContent = 'NO PLAYER KEY';
   noKeyWarning!.style.display = 'block';
+  noKeyWarning!.textContent = '⚠️ Player key required. Get one from the hub.';
+  startGameBtn!.disabled = true;
+  startGameBtn!.style.opacity = '0.5';
+  startGameBtn!.style.cursor = 'not-allowed';
 }
 
 // Track if game has started
 let gameStarted = false;
+
+// Global console commands (accessible via browser console)
+(window as any).kickAll = () => {
+  console.log('🚪 Kicking all players...');
+  socket.emit('admin:kickAll');
+};
+console.log('💡 Console commands available: kickAll()');
+
 
 // Initialize canvas (but don't start game loop yet)
 const canvas = new CanvasManager('game-canvas');
@@ -79,6 +92,10 @@ let respawnTimeEnd = 0; // Timestamp when respawn happens
 let isDead = false; // Track death state
 const followSpeed = 0.04; // Lower = more lag, higher = more responsive (increased delay)
 const rotationSpeed = 0.1; // Smooth rotation interpolation
+
+// Physics velocity for knockback
+let playerVelocity = { vx: 0, vy: 0 };
+const friction = 0.92; // Gradual slowdown
 
 // Shooting rate limiting
 let lastShotTime = 0;
@@ -181,9 +198,17 @@ socket.on('player:info', (data) => {
 });
 
 socket.onUserJoined((data) => {
-  console.log(`👋 User joined: ${data.label}`);
+  const myId = socket.getSocketId();
+  console.log(`👋 User joined: ${data.label} (${data.userId}), myId: ${myId}`);
+  // Never add ourselves to the cursors system (we're rendered as localCursor)
+  if (data.userId === myId) {
+    console.warn('⚠️ Ignoring user:joined for self');
+    return;
+  }
   // Register cursor immediately so we have the label/color
+  console.log('✅ Adding remote cursor:', data.userId, data.label);
   cursors.updateCursor(data.userId, -10000, -10000, data.color, data.label);
+  scoreManager.initPlayer(data.userId, data.label);
 });
 
 socket.onUserLeft((data) => {
@@ -191,19 +216,42 @@ socket.onUserLeft((data) => {
 });
 
 socket.onCursorsSync((data) => {
-  cursors.syncCursors(data.cursors);
+  const mySocketId = socket.getSocketId();
+  // Filter out our own cursor before syncing
+  const filteredCursors: Record<string, { x: number; y: number; color: string; label: string }> = {};
+  Object.entries(data.cursors).forEach(([userId, cursor]) => {
+    if (userId !== mySocketId) {
+      filteredCursors[userId] = cursor;
+    } else {
+      console.warn('⚠️ Filtered self from cursorsSync');
+    }
+  });
+  cursors.syncCursors(filteredCursors);
 });
 
 socket.onCursorUpdate((data) => {
+  const myId = socket.getSocketId();
+  // Never update our own cursor via network (we control it locally)
+  if (data.userId === myId) {
+    console.warn('⚠️ Received cursor:update for self - ignoring');
+    return;
+  }
   cursors.updateCursor(data.userId, data.x, data.y);
 });
 
 socket.onPlayerRespawn((data) => {
-  console.log('💀 Received respawn event:', data, 'My ID:', socket.getSocketId());
-  if (data.userId === socket.getSocketId()) {
+  const myId = socket.getSocketId();
+  console.log('💀 Received respawn event:', data.userId, 'My ID:', myId);
+
+  if (data.userId === myId) {
+    // Local player respawn
     respawnTimeEnd = data.respawnTime;
     isDead = true;
     console.log(`🕒 Respawning in ${Math.ceil((data.respawnTime - Date.now()) / 1000)}s`);
+  } else {
+    // Other player respawn - remove their cursor temporarily (they'll respawn at new position)
+    console.log(`👻 Other player respawning: ${data.userId}`);
+    cursors.removeCursor(data.userId);
   }
 });
 
@@ -245,15 +293,76 @@ socket.onBulletSpawn((data) => {
 // Handle health updates from network
 // Handle health updates from network
 socket.onHealthUpdate((data) => {
-  if (data.userId === socket.getSocketId() || data.userId === 'local') {
+  const myId = socket.getSocketId();
+  if (data.userId === myId || data.userId === 'local') {
+    const oldHealth = localCursor.health;
     localCursor.health = data.health;
-    console.log(`❤️ Health updated: ${localCursor.health}`);
+    console.log(`❤️ My health updated: ${oldHealth} → ${localCursor.health}`);
+
+    // Visual feedback for taking damage
+    if (localCursor.health < oldHealth && localCursor.health > 0) {
+      particles.explode(localCursor.x, localCursor.y, localCursor.color, 100);
+      screenShake.shake(5, 100);
+    }
+
+    // Death explosion
+    if (oldHealth > 0 && localCursor.health <= 0) {
+      console.log('💀 You died!');
+      explosions.explode(localCursor.x, localCursor.y, localCursor.color, 4);
+      particles.explode(localCursor.x, localCursor.y, localCursor.color, 1000);
+      screenShake.shake(25, 500);
+
+      // MASSIVE grid explosion shockwave
+      const explosionForce = 100;
+      const rings = 5;
+      for (let ring = 0; ring < rings; ring++) {
+        const ringRadius = ring * 30;
+        for (let angle = 0; angle < Math.PI * 2; angle += 0.1) {
+          const forceX = Math.cos(angle) * explosionForce;
+          const forceY = Math.sin(angle) * explosionForce;
+          const x = localCursor.x + Math.cos(angle) * ringRadius;
+          const y = localCursor.y + Math.sin(angle) * ringRadius;
+          grid.applyForce(x, y, forceX, forceY);
+        }
+      }
+    }
+
     if (localCursor.health > 0) {
       respawnTimeEnd = 0;
       isDead = false;
     }
   } else {
+    const cursor = cursors.getCursors().get(data.userId);
+    const oldHealth = cursor?.health || 100;
+    console.log(`❤️ Enemy health updated: ${data.userId} → ${data.health}`);
     cursors.setHealth(data.userId, data.health);
+
+    // Visual feedback for enemy taking damage
+    if (cursor && data.health < oldHealth && data.health > 0) {
+      particles.explode(cursor.x, cursor.y, cursor.color, 100);
+      screenShake.shake(3, 50);
+    }
+
+    // Enemy death explosion
+    if (cursor && oldHealth > 0 && data.health <= 0) {
+      console.log(`💀 ${cursor.label} died!`);
+      explosions.explode(cursor.x, cursor.y, cursor.color, 4);
+      particles.explode(cursor.x, cursor.y, cursor.color, 1000);
+      screenShake.shake(20, 400);
+    }
+  }
+});
+
+// Handle knockback from server
+socket.on('knockback', (data) => {
+  const myId = socket.getSocketId();
+  console.log('💥 Knockback event:', data.userId, 'myId:', myId);
+  if (data.userId === myId) {
+    console.log('✅ Applying knockback to self:', data.vx, data.vy);
+    playerVelocity.vx += data.vx;
+    playerVelocity.vy += data.vy;
+  } else {
+    console.log('⏭️ Ignoring knockback for other player:', data.userId);
   }
 });
 
@@ -432,7 +541,20 @@ canvas.startRenderLoop(() => {
   // We want the canvas to cover [-1050, -1050] to [1050, 1050].
   // So we drawImage at x=-1050, y=-1050.
   ctx.drawImage(borderCanvas, -MAP_WIDTH / 2 - 50, -MAP_HEIGHT / 2 - 50);
-  // Smooth follow: lerp local cursor toward target position
+
+  // Apply knockback velocity (physics)
+  localCursor.x += playerVelocity.vx;
+  localCursor.y += playerVelocity.vy;
+
+  // Apply friction to velocity
+  playerVelocity.vx *= friction;
+  playerVelocity.vy *= friction;
+
+  // Stop if velocity is very small
+  if (Math.abs(playerVelocity.vx) < 0.01) playerVelocity.vx = 0;
+  if (Math.abs(playerVelocity.vy) < 0.01) playerVelocity.vy = 0;
+
+  // Smooth follow: lerp local cursor toward target position (after knockback)
   const dx = targetPosition.x - localCursor.x;
   const dy = targetPosition.y - localCursor.y;
 
@@ -574,8 +696,14 @@ canvas.startRenderLoop(() => {
   }
   */
 
-  // Check laser collisions - local player
+  // ===== SERVER NOW HANDLES ALL COLLISION DETECTION =====
+  // Client-side collision detection removed - server is authoritative
+  // All damage and health updates come from server via socket events
+
   const mySocketId = socket.getSocketId();
+
+  /* DISABLED - Server handles collisions now
+  // Check laser collisions - local player
   const laserAttackerId = mySocketId ? lasers.checkCollision(localCursor.x, localCursor.y, SHIP_COLLISION_RADIUS, mySocketId) : null;
 
   if (laserAttackerId) {
@@ -640,7 +768,9 @@ canvas.startRenderLoop(() => {
       console.log('⏳ Waiting for server respawn...');
     }
   }
+  */ // End of disabled client-side collision code
 
+  /* DISABLED - Server handles remote player collisions too
   // Check laser collisions - remote players
   cursors.getCursors().forEach((cursor, userId) => {
     if (lasers.checkCollision(cursor.x, cursor.y, SHIP_COLLISION_RADIUS, userId)) {
@@ -708,6 +838,7 @@ canvas.startRenderLoop(() => {
       }
     }
   });
+  */ // End of disabled remote collision code
 
   // Update controls (for continuous actions)
   controls.update();
@@ -787,6 +918,15 @@ canvas.startRenderLoop(() => {
     scoreManager.renderUI(ctx, currentSocketId);
   }
   announcements.render(ctx);
+
+  // Debug: Show cursor count
+  const cursorCount = cursors.getCursors().size;
+  ctx.save();
+  ctx.fillStyle = '#FFFF00';
+  ctx.font = 'bold 14px Arial';
+  ctx.textAlign = 'left';
+  ctx.fillText(`Cursors: ${cursorCount}`, 20, window.innerHeight - 20);
+  ctx.restore();
 
   // Display current weapon
   // Display current weapon (if alive)

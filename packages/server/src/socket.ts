@@ -7,7 +7,7 @@ import {
   MAP_WIDTH,
   MAP_HEIGHT
 } from '@awesome-game/shared';
-import { addUser, removeUser, updateCursor, getAllUsers, updateHealth, addKill, addDeath, getUserRank, markScoreSubmitted } from './state.js';
+import { addUser, removeUser, updateCursor, getAllUsers, updateHealth, addKill, addDeath, getUserRank, markScoreSubmitted, applyKnockback, updatePhysics } from './state.js';
 import { MineSystem } from './mines.js';
 import { PowerUpSystem } from './powerups.js';
 import { BulletSystem } from './bullets.js';
@@ -96,6 +96,22 @@ export function initializeSocketHandlers(io: TypedServer): void {
     bulletSystem.update();
     laserSystem.update();
 
+    // Update physics (velocity, friction, bounds)
+    updatePhysics();
+
+    // Broadcast position updates for players with velocity (knockback effect)
+    getAllUsers().forEach((user, userId) => {
+      const hasVelocity = Math.abs(user.vx) > 0.1 || Math.abs(user.vy) > 0.1;
+      if (hasVelocity) {
+        io.emit('cursor:update', {
+          userId,
+          x: user.x,
+          y: user.y,
+          rotation: user.rotation
+        });
+      }
+    });
+
     // Check collisions
     const users = getAllUsers();
 
@@ -121,6 +137,113 @@ export function initializeSocketHandlers(io: TypedServer): void {
       const hitMineId = mineSystem.checkBulletCollision(bullet.x, bullet.y);
       if (hitMineId) {
         mineSystem.explodeMine(hitMineId, bullet.userId);
+        bulletSystem.removeBullet(bullet.id);
+      }
+    });
+
+    // Check bullet collisions with players (server-authoritative)
+    bulletSystem.getBullets().forEach(bullet => {
+      let bulletHit = false;
+
+      users.forEach(user => {
+        // Skip if bullet owner or already dead
+        if (bullet.userId === user.id || user.health <= 0) return;
+
+        // Check collision
+        const dx = user.x - bullet.x;
+        const dy = user.y - bullet.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance < user.radius + 3) { // 3 = bullet radius
+          bulletHit = true;
+
+          if (bullet.isRocket) {
+            // Rocket creates area explosion (handled below)
+            return;
+          }
+
+          // Standard bullet hit
+          const knockbackStrength = 8; // Increased from 2.5
+          const bulletSpeed = Math.sqrt(bullet.vx * bullet.vx + bullet.vy * bullet.vy);
+          const knockbackX = (bullet.vx / bulletSpeed) * knockbackStrength;
+          const knockbackY = (bullet.vy / bulletSpeed) * knockbackStrength;
+
+          applyKnockback(user.id, knockbackX, knockbackY);
+
+          // Broadcast knockback to client
+          io.emit('knockback', {
+            userId: user.id,
+            vx: knockbackX,
+            vy: knockbackY
+          });
+
+          const damage = 15;
+          const oldHealth = user.health;
+          const newHealth = Math.max(0, user.health - damage);
+          updateHealth(user.id, newHealth);
+
+          io.emit('health:update', {
+            userId: user.id,
+            health: newHealth
+          });
+
+          if (oldHealth > 0 && newHealth <= 0) {
+            handleDeath(user.id, bullet.userId);
+          }
+        }
+      });
+
+      // Handle rocket explosion (splash damage and knockback)
+      if (bulletHit && bullet.isRocket) {
+        const explosionRadius = 150; // Rocket blast radius
+        const explosionDamage = 100;
+
+        users.forEach(user => {
+          const dx = user.x - bullet.x;
+          const dy = user.y - bullet.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+
+          if (distance < explosionRadius) {
+            // Radial knockback (away from explosion)
+            if (distance > 0.1) {
+              const knockbackStrength = 25; // Massive explosion
+              const distanceFactor = 1 - (distance / explosionRadius);
+              const force = knockbackStrength * distanceFactor;
+              const knockbackX = (dx / distance) * force;
+              const knockbackY = (dy / distance) * force;
+
+              applyKnockback(user.id, knockbackX, knockbackY);
+
+              // Broadcast knockback to client
+              io.emit('knockback', {
+                userId: user.id,
+                vx: knockbackX,
+                vy: knockbackY
+              });
+            }
+
+            // Splash damage (less at distance)
+            const distanceFactor = 1 - (distance / explosionRadius);
+            const damage = Math.floor(explosionDamage * distanceFactor);
+            const oldHealth = user.health;
+            const newHealth = Math.max(0, user.health - damage);
+            updateHealth(user.id, newHealth);
+
+            io.emit('health:update', {
+              userId: user.id,
+              health: newHealth
+            });
+
+            // Don't give self kill credit for rocket suicide
+            if (oldHealth > 0 && newHealth <= 0) {
+              const isOwnRocket = bullet.userId === user.id;
+              handleDeath(user.id, isOwnRocket ? undefined : bullet.userId);
+            }
+          }
+        });
+      }
+
+      if (bulletHit) {
         bulletSystem.removeBullet(bullet.id);
       }
     });
@@ -209,7 +332,7 @@ export function initializeSocketHandlers(io: TypedServer): void {
       const bulletId = `${socket.id} -${Date.now()} -${Math.random()} `;
 
       // Add to server tracking
-      bulletSystem.addBullet(bulletId, socket.id, x, y, angle);
+      bulletSystem.addBullet(bulletId, socket.id, x, y, angle, isRocket);
 
       // Calculate velocity from angle (for client prediction)
       const bulletSpeed = 15;
@@ -253,6 +376,16 @@ export function initializeSocketHandlers(io: TypedServer): void {
           handleDeath(userId, attackerId);
         }
       }
+    });
+
+    // Admin command: kick all players
+    socket.on('admin:kickAll', () => {
+      console.log('🚪 Admin command: Kick all players');
+      // Disconnect all sockets
+      setTimeout(() => {
+        io.disconnectSockets();
+        console.log('✅ All players kicked');
+      }, 100);
     });
 
     // Handle disconnect

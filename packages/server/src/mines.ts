@@ -6,7 +6,7 @@ import {
     MAP_WIDTH,
     MAP_HEIGHT
 } from '@awesome-game/shared';
-import { getAllUsers, updateHealth } from './state.js';
+import { getAllUsers, updateHealth, applyKnockback } from './state.js';
 
 interface Mine extends MineData {
     damage: number;
@@ -169,13 +169,32 @@ export class MineSystem {
             triggeredBy: triggeredByUserId
         });
 
-        // Apply damage to players
+        // Apply damage and knockback to players
         getAllUsers().forEach((user) => {
             const dx = user.x - mine.x;
             const dy = user.y - mine.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
 
             if (distance < mine.damageRadius) {
+                // Apply knockback (radial, away from explosion center)
+                if (distance > 0.1) { // Avoid division by zero
+                    const knockbackStrength = 20; // Very strong explosion
+                    const distanceFactor = 1 - (distance / mine.damageRadius); // Closer = stronger
+                    const force = knockbackStrength * distanceFactor;
+                    const knockbackX = (dx / distance) * force;
+                    const knockbackY = (dy / distance) * force;
+
+                    applyKnockback(user.id, knockbackX, knockbackY);
+
+                    // Broadcast knockback to client
+                    this.io.emit('knockback', {
+                        userId: user.id,
+                        vx: knockbackX,
+                        vy: knockbackY
+                    });
+                }
+
+                // Apply damage
                 const oldHealth = user.health;
                 const newHealth = Math.max(0, user.health - mine.damage);
                 updateHealth(user.id, newHealth);

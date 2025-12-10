@@ -80,6 +80,13 @@ export class SocketManager {
   }
 
   /**
+   * Generic emit for admin commands
+   */
+  emit(event: string, ...args: any[]): void {
+    (this.socket as any).emit(event, ...args);
+  }
+
+  /**
    * Get the socket ID
    */
   getSocketId(): string | undefined {
